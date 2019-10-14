@@ -316,6 +316,18 @@ class TextFormatMessageToStringTests(TextFormatBase):
         'payload {{\n  {0}\n  {1}\n  {2}\n  {3}\n}}\n'.format(
             *formatted_fields))
 
+    # Test default float_format has 8 valid digits.
+    message.payload.optional_float = 1.2345678912
+    message.payload.optional_double = 1.2345678912
+    formatted_fields = ['optional_float: 1.2345679',
+                        'optional_double: 1.2345678912',
+                        'repeated_float: -5642', 'repeated_double: 7.89e-5']
+    text_message = text_format.MessageToString(message)
+    self.CompareToGoldenText(
+        self.RemoveRedundantZeros(text_message),
+        'payload {{\n  {0}\n  {1}\n  {2}\n  {3}\n}}\n'.format(
+            *formatted_fields))
+
   def testMessageToString(self, message_module):
     message = message_module.ForeignMessage()
     message.c = 123
@@ -833,17 +845,18 @@ class OnlyWorksWithProto2RightNowTests(TextFormatBase):
     all_data = message.SerializeToString()
     empty_message = unittest_pb2.TestEmptyMessage()
     empty_message.ParseFromString(all_data)
-    self.assertEqual('1: 101\n'
-                     '12: 4636878028842991616\n'
-                     '14: "hello"\n'
-                     '15: "103"\n'
-                     '16 {\n'
-                     '  17: 104\n'
-                     '}\n'
-                     '18 {\n'
-                     '  1: 105\n'
-                     '}\n',
+    self.assertEqual('  1: 101\n'
+                     '  12: 4636878028842991616\n'
+                     '  14: "hello"\n'
+                     '  15: "103"\n'
+                     '  16 {\n'
+                     '    17: 104\n'
+                     '  }\n'
+                     '  18 {\n'
+                     '    1: 105\n'
+                     '  }\n',
                      text_format.MessageToString(empty_message,
+                                                 indent=2,
                                                  print_unknown_fields=True))
     self.assertEqual('1: 101 '
                      '12: 4636878028842991616 '

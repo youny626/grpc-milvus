@@ -133,6 +133,12 @@ std::string GetReflectionClassUnqualifiedName(const FileDescriptor* descriptor) 
   return GetFileNameBase(descriptor) + "Reflection";
 }
 
+std::string GetExtensionClassUnqualifiedName(const FileDescriptor* descriptor) {
+  // TODO: Detect collisions with existing messages,
+  // and append an underscore if necessary.
+  return GetFileNameBase(descriptor) + "Extensions";
+}
+
 // TODO(jtattermusch): can we reuse a utility function?
 std::string UnderscoresToCamelCase(const std::string& input,
                                    bool cap_next_letter,
@@ -291,7 +297,7 @@ uint GetGroupEndTag(const Descriptor* descriptor) {
 
 std::string ToCSharpName(const std::string& name, const FileDescriptor* file) {
   std::string result = GetFileNamespace(file);
-  if (result != "") {
+  if (!result.empty()) {
     result += '.';
   }
   string classname;
@@ -313,6 +319,15 @@ std::string GetReflectionClassName(const FileDescriptor* descriptor) {
   }
   result += GetReflectionClassUnqualifiedName(descriptor);
   return "global::" + result;
+}
+
+std::string GetFullExtensionName(const FieldDescriptor* descriptor) {
+  if (descriptor->extension_scope()) {
+    return GetClassName(descriptor->extension_scope()) + ".Extensions." + GetPropertyName(descriptor);
+  }
+  else {
+    return GetExtensionClassUnqualifiedName(descriptor->file())  + "." + GetPropertyName(descriptor);
+  }
 }
 
 std::string GetClassName(const Descriptor* descriptor) {

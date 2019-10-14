@@ -55,8 +55,6 @@
 #include <google/protobuf/stubs/strutil.h>
 #include <google/protobuf/stubs/substitute.h>
 
-
-
 namespace google {
 namespace protobuf {
 namespace compiler {
@@ -237,9 +235,7 @@ void ImmutableMessageLiteGenerator::Generate(io::Printer* printer) {
                    "private int $oneof_name$Case_ = 0;\n"
                    "private java.lang.Object $oneof_name$_;\n");
     // OneofCase enum
-    printer->Print(vars,
-                   "public enum $oneof_capitalized_name$Case\n"
-                   "    implements com.google.protobuf.Internal.EnumLite {\n");
+    printer->Print(vars, "public enum $oneof_capitalized_name$Case {\n");
     printer->Indent();
     for (int j = 0; j < oneof->field_count(); j++) {
       const FieldDescriptor* field = oneof->field(j);
@@ -277,7 +273,8 @@ void ImmutableMessageLiteGenerator::Generate(io::Printer* printer) {
         "    default: return null;\n"
         "  }\n"
         "}\n"
-        "@java.lang.Override\n"
+        // TODO(b/135620659): Rename this to "getFieldNumber" or something to
+        // disambiguate it from actual proto enums.
         "public int getNumber() {\n"
         "  return this.value;\n"
         "}\n",
@@ -367,7 +364,9 @@ void ImmutableMessageLiteGenerator::Generate(io::Printer* printer) {
       "    synchronized ($classname$.class) {\n"
       "      parser = PARSER;\n"
       "      if (parser == null) {\n"
-      "        parser = new DefaultInstanceBasedParser(DEFAULT_INSTANCE);\n"
+      "        parser =\n"
+      "            new DefaultInstanceBasedParser<$classname$>(\n"
+      "                DEFAULT_INSTANCE);\n"
       "        PARSER = parser;\n"
       "      }\n"
       "    }\n"
@@ -419,20 +418,17 @@ void ImmutableMessageLiteGenerator::Generate(io::Printer* printer) {
 
   printer->Print(
       "static {\n"
+      "  $classname$ defaultInstance = new $classname$();\n"
       "  // New instances are implicitly immutable so no need to make\n"
       "  // immutable.\n"
-      "  DEFAULT_INSTANCE = new $classname$();\n"
+      "  DEFAULT_INSTANCE = defaultInstance;\n"
+      // Register the default instance in a map. This map will be used by
+      // experimental runtime to lookup default instance given a class instance
+      // without using Java reflection.
+      "  com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(\n"
+      "    $classname$.class, defaultInstance);\n"
       "}\n"
       "\n",
-      "classname", descriptor_->name());
-  // Register the default instance in a map. This map will be used by
-  // experimental runtime to lookup default instance given a class instance
-  // without using Java reflection.
-  printer->Print(
-      "static {\n"
-      "  com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(\n"
-      "    $classname$.class, DEFAULT_INSTANCE);\n"
-      "}\n",
       "classname", descriptor_->name());
 
   printer->Print(

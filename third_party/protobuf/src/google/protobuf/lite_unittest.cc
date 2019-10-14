@@ -1062,11 +1062,9 @@ TEST(Lite, CorrectEnding) {
     // for non-group messages (like TestAllTypesLite) which made it not accept
     // end-group. This is not a real big deal, but I think going forward its
     // good to have all parse loops behave 'exactly' the same.
-#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
     EXPECT_TRUE(msg.MergePartialFromCodedStream(&cis));
     EXPECT_FALSE(cis.ConsumedEntireMessage());
     EXPECT_TRUE(cis.LastTagWas(132));
-#endif
   }
   {
     // This is an incomplete end-group tag. This should be a genuine parse
@@ -1076,9 +1074,7 @@ TEST(Lite, CorrectEnding) {
     // Unfortunately the old parser detects a parse error in ReadTag and returns
     // 0 (as it states 0 is an invalid tag). However 0 is not an invalid tag
     // as it can be used to terminate the stream, so this returns true.
-#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
     EXPECT_FALSE(msg.MergePartialFromCodedStream(&cis));
-#endif
   }
 }
 
@@ -1095,6 +1091,100 @@ TEST(Lite, DebugString) {
   // non-determinism, which should make it easier for us to change the output
   // later without breaking any code.
   EXPECT_NE(message1.DebugString(), message2.DebugString());
+}
+
+TEST(Lite, EnumValueToName) {
+  EXPECT_EQ("FOREIGN_LITE_FOO", protobuf_unittest::ForeignEnumLite_Name(
+                                    protobuf_unittest::FOREIGN_LITE_FOO));
+  EXPECT_EQ("FOREIGN_LITE_BAR", protobuf_unittest::ForeignEnumLite_Name(
+                                    protobuf_unittest::FOREIGN_LITE_BAR));
+  EXPECT_EQ("FOREIGN_LITE_BAZ", protobuf_unittest::ForeignEnumLite_Name(
+                                    protobuf_unittest::FOREIGN_LITE_BAZ));
+  EXPECT_EQ("", protobuf_unittest::ForeignEnumLite_Name(0));
+  EXPECT_EQ("", protobuf_unittest::ForeignEnumLite_Name(999));
+}
+
+TEST(Lite, NestedEnumValueToName) {
+  EXPECT_EQ("FOO", protobuf_unittest::TestAllTypesLite::NestedEnum_Name(
+                       protobuf_unittest::TestAllTypesLite::FOO));
+  EXPECT_EQ("BAR", protobuf_unittest::TestAllTypesLite::NestedEnum_Name(
+                       protobuf_unittest::TestAllTypesLite::BAR));
+  EXPECT_EQ("BAZ", protobuf_unittest::TestAllTypesLite::NestedEnum_Name(
+                       protobuf_unittest::TestAllTypesLite::BAZ));
+  EXPECT_EQ("", protobuf_unittest::TestAllTypesLite::NestedEnum_Name(0));
+  EXPECT_EQ("", protobuf_unittest::TestAllTypesLite::NestedEnum_Name(999));
+}
+
+TEST(Lite, EnumNameToValue) {
+  protobuf_unittest::ForeignEnumLite value;
+
+  ASSERT_TRUE(
+      protobuf_unittest::ForeignEnumLite_Parse("FOREIGN_LITE_FOO", &value));
+  EXPECT_EQ(protobuf_unittest::FOREIGN_LITE_FOO, value);
+
+  ASSERT_TRUE(
+      protobuf_unittest::ForeignEnumLite_Parse("FOREIGN_LITE_BAR", &value));
+  EXPECT_EQ(protobuf_unittest::FOREIGN_LITE_BAR, value);
+
+  ASSERT_TRUE(
+      protobuf_unittest::ForeignEnumLite_Parse("FOREIGN_LITE_BAZ", &value));
+  EXPECT_EQ(protobuf_unittest::FOREIGN_LITE_BAZ, value);
+
+  // Non-existent values
+  EXPECT_FALSE(protobuf_unittest::ForeignEnumLite_Parse("E", &value));
+  EXPECT_FALSE(
+      protobuf_unittest::ForeignEnumLite_Parse("FOREIGN_LITE_C", &value));
+  EXPECT_FALSE(protobuf_unittest::ForeignEnumLite_Parse("G", &value));
+}
+
+TEST(Lite, NestedEnumNameToValue) {
+  protobuf_unittest::TestAllTypesLite::NestedEnum value;
+
+  ASSERT_TRUE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("FOO", &value));
+  EXPECT_EQ(protobuf_unittest::TestAllTypesLite::FOO, value);
+
+  ASSERT_TRUE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("BAR", &value));
+  EXPECT_EQ(protobuf_unittest::TestAllTypesLite::BAR, value);
+
+  ASSERT_TRUE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("BAZ", &value));
+  EXPECT_EQ(protobuf_unittest::TestAllTypesLite::BAZ, value);
+
+  // Non-existent values
+  EXPECT_FALSE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("A", &value));
+  EXPECT_FALSE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("C", &value));
+  EXPECT_FALSE(
+      protobuf_unittest::TestAllTypesLite::NestedEnum_Parse("G", &value));
+}
+
+TEST(Lite, AliasedEnum) {
+  // Enums with allow_alias = true can have multiple entries with the same
+  // value.
+  EXPECT_EQ("FOO1", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(
+                        protobuf_unittest::DupEnum::FOO1));
+  EXPECT_EQ("FOO1", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(
+                        protobuf_unittest::DupEnum::FOO2));
+  EXPECT_EQ("BAR1", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(
+                        protobuf_unittest::DupEnum::BAR1));
+  EXPECT_EQ("BAR1", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(
+                        protobuf_unittest::DupEnum::BAR2));
+  EXPECT_EQ("BAZ", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(
+                       protobuf_unittest::DupEnum::BAZ));
+  EXPECT_EQ("", protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Name(999));
+
+  protobuf_unittest::DupEnum::TestEnumWithDupValueLite value;
+  ASSERT_TRUE(
+      protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Parse("FOO1", &value));
+  EXPECT_EQ(protobuf_unittest::DupEnum::FOO1, value);
+
+  value = static_cast<protobuf_unittest::DupEnum::TestEnumWithDupValueLite>(0);
+  ASSERT_TRUE(
+      protobuf_unittest::DupEnum::TestEnumWithDupValueLite_Parse("FOO2", &value));
+  EXPECT_EQ(protobuf_unittest::DupEnum::FOO2, value);
 }
 
 }  // namespace protobuf

@@ -156,7 +156,7 @@ class PROTOBUF_EXPORT MapFieldBase {
   friend class ContendedMapCleanTest;
   friend class GeneratedMessageReflection;
   friend class MapFieldAccessor;
-  friend class DynamicMessage;
+  friend class ::PROTOBUF_NAMESPACE_ID::DynamicMessage;
 
   // Virtual helper methods for MapIterator. MapIterator doesn't have the
   // type helper for key and value. Call these help methods to deal with
@@ -225,9 +225,6 @@ class MapField : public TypeDefinedMapFieldBase<Key, T> {
 
   // Define message type for internal repeated field.
   typedef Derived EntryType;
-  typedef MapEntryLite<Derived, Key, T, kKeyFieldType, kValueFieldType,
-                       default_enum_value>
-      EntryLiteType;
 
   // Define abbreviation for parent MapFieldLite
   typedef MapFieldLite<Derived, Key, T, kKeyFieldType, kValueFieldType,
@@ -665,7 +662,7 @@ class PROTOBUF_EXPORT MapValueRef {
   template <typename K, typename V>
   friend class internal::TypeDefinedMapFieldBase;
   friend class ::PROTOBUF_NAMESPACE_ID::MapIterator;
-  friend class internal::GeneratedMessageReflection;
+  friend class Reflection;
   friend class internal::DynamicMapField;
 
   void SetType(FieldDescriptor::CppType type) { type_ = type; }

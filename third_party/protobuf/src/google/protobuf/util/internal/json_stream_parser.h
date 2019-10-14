@@ -35,14 +35,10 @@
 #include <string>
 
 #include <google/protobuf/stubs/common.h>
-#include <google/protobuf/stubs/stringpiece.h>
+#include <google/protobuf/stubs/strutil.h>
 #include <google/protobuf/stubs/status.h>
 
 #include <google/protobuf/port_def.inc>
-
-namespace util {
-class Status;
-}  // namespace util
 
 namespace google {
 namespace protobuf {

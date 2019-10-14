@@ -32,12 +32,12 @@
 //  Based on original Protocol Buffers design by
 //  Sanjay Ghemawat, Jeff Dean, and others.
 
+#include <google/protobuf/compiler/parser.h>
+
 #include <algorithm>
 #include <map>
 #include <memory>
 #include <vector>
-
-#include <google/protobuf/compiler/parser.h>
 
 #include <google/protobuf/test_util2.h>
 #include <google/protobuf/unittest.pb.h>
@@ -47,12 +47,10 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/wire_format.h>
-#include <google/protobuf/stubs/substitute.h>
-
-#include <google/protobuf/stubs/map_util.h>
-
 #include <google/protobuf/testing/googletest.h>
 #include <gtest/gtest.h>
+#include <google/protobuf/stubs/substitute.h>
+#include <google/protobuf/stubs/map_util.h>
 
 namespace google {
 namespace protobuf {
@@ -65,9 +63,15 @@ class MockErrorCollector : public io::ErrorCollector {
   MockErrorCollector() = default;
   ~MockErrorCollector() override = default;
 
+  std::string warning_;
   std::string text_;
 
   // implements ErrorCollector ---------------------------------------
+  void AddWarning(int line, int column, const std::string& message) override {
+    strings::SubstituteAndAppend(&warning_, "$0:$1: $2\n", line, column,
+                                 message);
+  }
+
   void AddError(int line, int column, const std::string& message) override {
     strings::SubstituteAndAppend(&text_, "$0:$1: $2\n", line, column, message);
   }
@@ -221,6 +225,43 @@ TEST_F(ParserTest, WarnIfSyntaxIdentifierOmmitted) {
   EXPECT_TRUE(parser_->Parse(input_.get(), &file));
   EXPECT_TRUE(GetCapturedTestStderr().find("No syntax specified") !=
               string::npos);
+}
+
+TEST_F(ParserTest, WarnIfFieldNameIsNotUpperCamel) {
+  SetupParser(
+      "syntax = \"proto2\";"
+      "message abc {}");
+  FileDescriptorProto file;
+  EXPECT_TRUE(parser_->Parse(input_.get(), &file));
+  EXPECT_TRUE(error_collector_.warning_.find(
+                  "Message name should be in UpperCamelCase. Found: abc.") !=
+              string::npos);
+}
+
+TEST_F(ParserTest, WarnIfFieldNameIsNotLowerUnderscore) {
+  SetupParser(
+      "syntax = \"proto2\";"
+      "message A {"
+      "  optional string SongName = 1;"
+      "}");
+  FileDescriptorProto file;
+  EXPECT_TRUE(parser_->Parse(input_.get(), &file));
+  EXPECT_TRUE(error_collector_.warning_.find(
+                  "Field name should be lowercase. Found: SongName") !=
+              string::npos);
+}
+
+TEST_F(ParserTest, WarnIfFieldNameContainsNumberImmediatelyFollowUnderscore) {
+  SetupParser(
+      "syntax = \"proto2\";"
+      "message A {"
+      "  optional string song_name_1 = 1;"
+      "}");
+  FileDescriptorProto file;
+  EXPECT_TRUE(parser_->Parse(input_.get(), &file));
+  EXPECT_TRUE(error_collector_.warning_.find(
+                  "Number should not come right after an underscore. Found: "
+                  "song_name_1.") != string::npos);
 }
 
 // ===================================================================
@@ -2762,6 +2803,35 @@ TEST_F(SourceInfoTest, Fields) {
 
   // Ignore these.
   EXPECT_TRUE(HasSpan(file_));
+  EXPECT_TRUE(HasSpan(file_.message_type(0)));
+  EXPECT_TRUE(HasSpan(file_.message_type(0), "name"));
+}
+
+TEST_F(SourceInfoTest, Proto3Fields) {
+  EXPECT_TRUE(
+      Parse("syntax = \"proto3\";\n"
+            "message Foo {\n"
+            "  $a$int32$b$ $c$bar$d$ = $e$1$f$;$g$\n"
+            "  $h$repeated$i$ $j$X.Y$k$ $l$baz$m$ = $n$2$o$;$p$\n"
+            "}\n"));
+
+  const FieldDescriptorProto& field1 = file_.message_type(0).field(0);
+  const FieldDescriptorProto& field2 = file_.message_type(0).field(1);
+
+  EXPECT_TRUE(HasSpan('a', 'g', field1));
+  EXPECT_TRUE(HasSpan('a', 'b', field1, "type"));
+  EXPECT_TRUE(HasSpan('c', 'd', field1, "name"));
+  EXPECT_TRUE(HasSpan('e', 'f', field1, "number"));
+
+  EXPECT_TRUE(HasSpan('h', 'p', field2));
+  EXPECT_TRUE(HasSpan('h', 'i', field2, "label"));
+  EXPECT_TRUE(HasSpan('j', 'k', field2, "type_name"));
+  EXPECT_TRUE(HasSpan('l', 'm', field2, "name"));
+  EXPECT_TRUE(HasSpan('n', 'o', field2, "number"));
+
+  // Ignore these.
+  EXPECT_TRUE(HasSpan(file_));
+  EXPECT_TRUE(HasSpan(file_, "syntax"));
   EXPECT_TRUE(HasSpan(file_.message_type(0)));
   EXPECT_TRUE(HasSpan(file_.message_type(0), "name"));
 }

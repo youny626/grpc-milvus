@@ -88,7 +88,6 @@ std::string GeneratedMetadataFileName(const FileDescriptor* file,
 std::string LabelForField(FieldDescriptor* field);
 std::string TypeName(FieldDescriptor* field);
 std::string UnderscoresToCamelCase(const string& name, bool cap_first_letter);
-std::string EscapeDollor(const string& to_escape);
 std::string BinaryToHex(const string& binary);
 void Indent(io::Printer* printer);
 void Outdent(io::Printer* printer);
@@ -153,7 +152,7 @@ template <typename DescriptorType>
 std::string ClassNamePrefix(const string& classname,
                             const DescriptorType* desc) {
   const string& prefix = (desc->file()->options()).php_class_prefix();
-  if (prefix != "") {
+  if (!prefix.empty()) {
     return prefix;
   }
 
@@ -244,13 +243,13 @@ template <typename DescriptorType>
 std::string RootPhpNamespace(const DescriptorType* desc, bool is_descriptor) {
   if (desc->file()->options().has_php_namespace()) {
     const string& php_namespace = desc->file()->options().php_namespace();
-    if (php_namespace != "") {
+    if (!php_namespace.empty()) {
       return php_namespace;
     }
     return "";
   }
 
-  if (desc->file()->package() != "") {
+  if (!desc->file()->package().empty()) {
     return PhpName(desc->file()->package(), is_descriptor);
   }
   return "";
@@ -260,7 +259,7 @@ template <typename DescriptorType>
 std::string FullClassName(const DescriptorType* desc, bool is_descriptor) {
   string classname = GeneratedClassNameImpl(desc);
   string php_namespace = RootPhpNamespace(desc, is_descriptor);
-  if (php_namespace != "") {
+  if (!php_namespace.empty()) {
     return php_namespace + "\\" + classname;
   }
   return classname;
@@ -270,7 +269,7 @@ template <typename DescriptorType>
 std::string LegacyFullClassName(const DescriptorType* desc, bool is_descriptor) {
   string classname = LegacyGeneratedClassName(desc);
   string php_namespace = RootPhpNamespace(desc, is_descriptor);
-  if (php_namespace != "") {
+  if (!php_namespace.empty()) {
     return php_namespace + "\\" + classname;
   }
   return classname;
@@ -352,7 +351,7 @@ std::string GeneratedMetadataFileName(const FileDescriptor* file,
   if (file->options().has_php_metadata_namespace()) {
     const string& php_metadata_namespace =
         file->options().php_metadata_namespace();
-    if (php_metadata_namespace != "" && php_metadata_namespace != "\\") {
+    if (!php_metadata_namespace.empty() && php_metadata_namespace != "\\") {
       result += php_metadata_namespace;
       std::replace(result.begin(), result.end(), '\\', '/');
       if (result.at(result.size() - 1) != '/') {
@@ -552,45 +551,41 @@ std::string EnumOrMessageSuffix(
 
 // Converts a name to camel-case. If cap_first_letter is true, capitalize the
 // first letter.
-std::string UnderscoresToCamelCase(const string& input, bool cap_first_letter) {
+std::string UnderscoresToCamelCase(const string& name, bool cap_first_letter) {
   std::string result;
-  for (int i = 0; i < input.size(); i++) {
-    if ('a' <= input[i] && input[i] <= 'z') {
+  for (int i = 0; i < name.size(); i++) {
+    if ('a' <= name[i] && name[i] <= 'z') {
       if (cap_first_letter) {
-        result += input[i] + ('A' - 'a');
+        result += name[i] + ('A' - 'a');
       } else {
-        result += input[i];
+        result += name[i];
       }
       cap_first_letter = false;
-    } else if ('A' <= input[i] && input[i] <= 'Z') {
+    } else if ('A' <= name[i] && name[i] <= 'Z') {
       if (i == 0 && !cap_first_letter) {
         // Force first letter to lower-case unless explicitly told to
         // capitalize it.
-        result += input[i] + ('a' - 'A');
+        result += name[i] + ('a' - 'A');
       } else {
         // Capital letters after the first are left as-is.
-        result += input[i];
+        result += name[i];
       }
       cap_first_letter = false;
-    } else if ('0' <= input[i] && input[i] <= '9') {
-      result += input[i];
+    } else if ('0' <= name[i] && name[i] <= '9') {
+      result += name[i];
       cap_first_letter = true;
     } else {
       cap_first_letter = true;
     }
   }
   // Add a trailing "_" if the name should be altered.
-  if (input[input.size() - 1] == '#') {
+  if (name[name.size() - 1] == '#') {
     result += '_';
   }
   return result;
 }
 
-std::string EscapeDollor(const string& to_escape) {
-  return StringReplace(to_escape, "$", "\\$", true);
-}
-
-std::string BinaryToHex(const string& src) {
+std::string BinaryToHex(const string& binary) {
   string dest;
   size_t i;
   unsigned char symbol[16] = {
@@ -600,12 +595,12 @@ std::string BinaryToHex(const string& src) {
     'c', 'd', 'e', 'f',
   };
 
-  dest.resize(src.size() * 2);
+  dest.resize(binary.size() * 2);
   char* append_ptr = &dest[0];
 
-  for (i = 0; i < src.size(); i++) {
-    *append_ptr++ = symbol[(src[i] & 0xf0) >> 4];
-    *append_ptr++ = symbol[src[i] & 0x0f];
+  for (i = 0; i < binary.size(); i++) {
+    *append_ptr++ = symbol[(binary[i] & 0xf0) >> 4];
+    *append_ptr++ = symbol[binary[i] & 0x0f];
   }
 
   return dest;
@@ -655,88 +650,50 @@ void GenerateOneofField(const OneofDescriptor* oneof, io::Printer* printer) {
 
 void GenerateFieldAccessor(const FieldDescriptor* field, bool is_descriptor,
                            io::Printer* printer) {
-  bool need_other_name_for_accessor = false;
-  bool need_other_name_for_wrapper_accessor = false;
-  const Descriptor* desc = field->containing_type();
-
-  if (!field->is_repeated() &&
-      field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE &&
-      IsWrapperType(field)) {
-    // Check if there is any field called xxx_value
-    const FieldDescriptor* other =
-        desc->FindFieldByName(StrCat(field->name(), "_value"));
-    if (other != NULL) {
-      need_other_name_for_wrapper_accessor = true;
-    }
-  }
-
-  if (strings::EndsWith(field->name(), "_value")) {
-    std::size_t pos = (field->name()).find("_value");  
-    string name = (field->name()).substr(0, pos);
-    const FieldDescriptor* other = desc->FindFieldByName(name);
-    if (other != NULL &&
-        !other->is_repeated() &&
-        other->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE &&
-        IsWrapperType(other)) {
-      need_other_name_for_accessor = true;
-    }
-  }
-
   const OneofDescriptor* oneof = field->containing_oneof();
 
   // Generate getter.
   if (oneof != NULL) {
     GenerateFieldDocComment(printer, field, is_descriptor, kFieldGetter);
     printer->Print(
-        "public function get^camel_name^^field_number^()\n"
+        "public function get^camel_name^()\n"
         "{\n"
         "    return $this->readOneof(^number^);\n"
         "}\n\n",
         "camel_name", UnderscoresToCamelCase(field->name(), true),
-        "number", IntToString(field->number()),
-        "field_number", need_other_name_for_accessor ?
-            StrCat(field->number()) : "");
+        "number", IntToString(field->number()));
   } else {
     GenerateFieldDocComment(printer, field, is_descriptor, kFieldGetter);
     printer->Print(
-        "public function get^camel_name^^field_number^()\n"
+        "public function get^camel_name^()\n"
         "{\n"
         "    return $this->^name^;\n"
         "}\n\n",
-        "camel_name", UnderscoresToCamelCase(field->name(), true),
-        "name", field->name(),
-        "field_number", need_other_name_for_accessor ?
-            StrCat(field->number()) : "");
+        "camel_name", UnderscoresToCamelCase(field->name(), true), "name",
+        field->name());
   }
 
-  // For wrapper types, generate an additional getXXXValue getter
+  // For wrapper types, generate an additional getXXXUnwrapped getter
   if (!field->is_map() &&
       !field->is_repeated() &&
       field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE &&
       IsWrapperType(field)) {
     GenerateWrapperFieldGetterDocComment(printer, field);
-
     printer->Print(
-        "public function get^camel_name^Value^field_number1^()\n"
+        "public function get^camel_name^Unwrapped()\n"
         "{\n"
-        "    $wrapper = $this->get^camel_name^^field_number2^();\n"
+        "    $wrapper = $this->get^camel_name^();\n"
         "    return is_null($wrapper) ? null : $wrapper->getValue();\n"
         "}\n\n",
-        "camel_name", UnderscoresToCamelCase(field->name(), true),
-        "field_number1", need_other_name_for_wrapper_accessor ?
-            StrCat(field->number()) : "",
-        "field_number2", need_other_name_for_accessor ?
-            StrCat(field->number()) : "");
+        "camel_name", UnderscoresToCamelCase(field->name(), true));
   }
 
   // Generate setter.
   GenerateFieldDocComment(printer, field, is_descriptor, kFieldSetter);
   printer->Print(
-      "public function set^camel_name^^field_number^($var)\n"
+      "public function set^camel_name^($var)\n"
       "{\n",
-      "camel_name", UnderscoresToCamelCase(field->name(), true),
-      "field_number", need_other_name_for_accessor ?
-          StrCat(field->number()) : "");
+      "camel_name", UnderscoresToCamelCase(field->name(), true));
 
   Indent(printer);
 
@@ -836,17 +793,13 @@ void GenerateFieldAccessor(const FieldDescriptor* field, bool is_descriptor,
       IsWrapperType(field)) {
     GenerateWrapperFieldSetterDocComment(printer, field);
     printer->Print(
-        "public function set^camel_name^Value^field_number1^($var)\n"
+        "public function set^camel_name^Unwrapped($var)\n"
         "{\n"
         "    $wrappedVar = is_null($var) ? null : new \\^wrapper_type^(['value' => $var]);\n"
-        "    return $this->set^camel_name^^field_number2^($wrappedVar);\n"
+        "    return $this->set^camel_name^($wrappedVar);\n"
         "}\n\n",
         "camel_name", UnderscoresToCamelCase(field->name(), true),
-        "wrapper_type", LegacyFullClassName(field->message_type(), is_descriptor),
-        "field_number1", need_other_name_for_wrapper_accessor ?
-            StrCat(field->number()) : "",
-        "field_number2", need_other_name_for_accessor ?
-            StrCat(field->number()) : "");
+        "wrapper_type", LegacyFullClassName(field->message_type(), is_descriptor));
   }
 
   // Generate has method for proto2 only.
@@ -921,7 +874,7 @@ void GenerateMessageToPool(const string& name_prefix, const Descriptor* message,
           "field", field->name(),
           "key", ToUpper(key->type_name()),
           "value", ToUpper(val->type_name()),
-          "number", SimpleItoa(field->number()),
+          "number", StrCat(field->number()),
           "other", EnumOrMessageSuffix(val, true));
     } else if (!field->containing_oneof()) {
       printer->Print(
@@ -930,7 +883,7 @@ void GenerateMessageToPool(const string& name_prefix, const Descriptor* message,
           "field", field->name(),
           "label", LabelForField(field),
           "type", ToUpper(field->type_name()),
-          "number", SimpleItoa(field->number()),
+          "number", StrCat(field->number()),
           "other", EnumOrMessageSuffix(field, true));
     }
   }
@@ -948,7 +901,7 @@ void GenerateMessageToPool(const string& name_prefix, const Descriptor* message,
           "\\Google\\Protobuf\\Internal\\GPBType::^type^, ^number^^other^)\n",
           "field", field->name(),
           "type", ToUpper(field->type_name()),
-          "number", SimpleItoa(field->number()),
+          "number", StrCat(field->number()),
           "other", EnumOrMessageSuffix(field, true));
     }
     printer->Print("->finish()\n");
@@ -1145,7 +1098,7 @@ void LegacyGenerateClassFile(const FileDescriptor* file, const DescriptorType* d
   GenerateHead(file, &printer);
 
   std::string php_namespace = RootPhpNamespace(desc, is_descriptor);
-  if (php_namespace != "") {
+  if (!php_namespace.empty()) {
     printer.Print(
         "namespace ^name^;\n\n",
         "name", php_namespace);
@@ -1505,7 +1458,7 @@ static void GenerateDocCommentBodyForLocation(
     // HTML-escape them so that they don't accidentally close the doc comment.
     comments = EscapePhpdoc(comments);
 
-    std::vector<string> lines = Split(comments, "\n");
+    std::vector<string> lines = Split(comments, "\n", true);
     while (!lines.empty() && lines.back().empty()) {
       lines.pop_back();
     }

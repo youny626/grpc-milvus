@@ -71,11 +71,11 @@
 #include <google/protobuf/wire_format.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <google/protobuf/util/time_util.h>
-#include <google/protobuf/stubs/substitute.h>
 #include <gmock/gmock.h>
 #include <google/protobuf/testing/googletest.h>
 #include <gtest/gtest.h>
 #include <google/protobuf/stubs/casts.h>
+#include <google/protobuf/stubs/substitute.h>
 
 
 #include <google/protobuf/port_def.inc>
@@ -621,10 +621,6 @@ TEST_F(MapImplTest, IteratorConstness) {
 }
 
 bool IsForwardIteratorHelper(std::forward_iterator_tag /*tag*/) { return true; }
-template <typename T>
-bool IsForwardIteratorHelper(T /*t*/) {
-  return false;
-}
 
 TEST_F(MapImplTest, IteratorCategory) {
   EXPECT_TRUE(IsForwardIteratorHelper(
@@ -1836,6 +1832,16 @@ TEST_F(MapFieldReflectionTest, MapSizeWithDuplicatedKey) {
   }
 }
 
+TEST_F(MapFieldReflectionTest, UninitializedEntry) {
+  unittest::TestRequiredMessageMap message;
+  const Reflection* reflection = message.GetReflection();
+  const FieldDescriptor* field =
+      message.GetDescriptor()->FindFieldByName("map_field");
+  auto entry = reflection->AddMessage(&message, field);
+  EXPECT_FALSE(entry->IsInitialized());
+  EXPECT_FALSE(message.IsInitialized());
+}
+
 // Generated Message Test ===========================================
 
 TEST(GeneratedMapFieldTest, Accessors) {
@@ -2296,11 +2302,9 @@ TEST(GeneratedMapFieldTest, KeysValuesUnknownsWireFormat) {
         if (is_value) expected_value = static_cast<int>(c);
         bool res = message.ParseFromString(wire_format);
         bool expect_success = true;
-#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
         // Unfortunately the old map parser accepts malformed input, the new
         // parser accepts only correct input.
         if (j != items - 1) expect_success = false;
-#endif
         if (expect_success) {
           ASSERT_TRUE(res);
           ASSERT_EQ(1, message.map_int32_int32().size());
@@ -3087,11 +3091,13 @@ static std::string DeterministicSerialization(const T& t) {
   const int size = t.ByteSize();
   std::string result(size, '\0');
   io::ArrayOutputStream array_stream(::google::protobuf::string_as_array(&result), size);
-  io::CodedOutputStream output_stream(&array_stream);
-  output_stream.SetSerializationDeterministic(true);
-  t.SerializeWithCachedSizes(&output_stream);
-  EXPECT_FALSE(output_stream.HadError());
-  EXPECT_EQ(size, output_stream.ByteCount());
+  {
+    io::CodedOutputStream output_stream(&array_stream);
+    output_stream.SetSerializationDeterministic(true);
+    t.SerializeWithCachedSizes(&output_stream);
+    EXPECT_FALSE(output_stream.HadError());
+    EXPECT_EQ(size, output_stream.ByteCount());
+  }
   EXPECT_EQ(result, DeterministicSerializationWithSerializeToCodedStream(t));
   EXPECT_EQ(result,
             DeterministicSerializationWithSerializePartialToCodedStream(t));

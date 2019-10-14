@@ -44,8 +44,6 @@ goog.require('goog.crypt.base64');
 goog.require('jspb.BinaryReader');
 goog.require('jspb.Map');
 
-// Not needed in compilation units that have no protos with xids.
-goog.forwardDeclare('xid.String');
 
 
 
@@ -106,7 +104,7 @@ jspb.ExtensionFieldInfo = function(fieldNumber, fieldName, ctor, toObjectFn,
 /**
  * Stores binary-related information for a single extension field.
  * @param {!jspb.ExtensionFieldInfo<T>} fieldInfo
- * @param {function(this:jspb.BinaryReader,number,?)} binaryReaderFn
+ * @param {function(this:jspb.BinaryReader,number,?,?)} binaryReaderFn
  * @param {function(this:jspb.BinaryWriter,number,?)
  *        |function(this:jspb.BinaryWriter,number,?,?,?,?,?)} binaryWriterFn
  * @param {function(?,?)=} opt_binaryMessageSerializeFn
@@ -284,18 +282,6 @@ jspb.Message.prototype.convertedPrimitiveFields_;
  * @protected {?Array<number>|undefined}
  */
 jspb.Message.prototype.repeatedFields;
-
-
-/**
- * The xid of this proto type (The same for all instances of a proto). Provides
- * a way to identify a proto by stable obfuscated name.
- * @see {xid}.
- * Available if {@link jspb.generate_xid} is added as a Message option to
- * a protocol buffer.
- * @const {!xid.String|undefined} The xid or undefined if message is
- *     annotated to generate the xid.
- */
-jspb.Message.prototype.messageXid;
 
 
 
@@ -972,171 +958,204 @@ jspb.Message.getMapField = function(msg, fieldNumber, noLazyCreate,
   // If we already have a map in the map wrappers, return that.
   if (fieldNumber in msg.wrappers_) {
     return msg.wrappers_[fieldNumber];
-  } else if (noLazyCreate) {
-    return undefined;
-  } else {
-    // Wrap the underlying elements array with a Map.
-    var arr = jspb.Message.getField(msg, fieldNumber);
-    if (!arr) {
-      arr = [];
-      jspb.Message.setField(msg, fieldNumber, arr);
-    }
-    return msg.wrappers_[fieldNumber] =
-        new jspb.Map(
-            /** @type {!Array<!Array<!Object>>} */ (arr), opt_valueCtor);
   }
+  var arr = jspb.Message.getField(msg, fieldNumber);
+  // Wrap the underlying elements array with a Map.
+  if (!arr) {
+    if (noLazyCreate) {
+      return undefined;
+    }
+    arr = [];
+    jspb.Message.setField(msg, fieldNumber, arr);
+  }
+  return msg.wrappers_[fieldNumber] =
+      new jspb.Map(
+          /** @type {!Array<!Array<!Object>>} */ (arr), opt_valueCtor);
 };
 
 
 /**
  * Sets the value of a non-extension field.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {string|number|boolean|Uint8Array|Array|undefined} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setField = function(msg, fieldNumber, value) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   if (fieldNumber < msg.pivot_) {
     msg.array[jspb.Message.getIndex_(msg, fieldNumber)] = value;
   } else {
     jspb.Message.maybeInitEmptyExtensionObject_(msg);
     msg.extensionObject_[fieldNumber] = value;
   }
+  return msg;
 };
 
 
 /**
  * Sets the value of a non-extension integer field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {number} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3IntField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0);
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0);
 };
 
 
 /**
  * Sets the value of a non-extension floating point field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {number} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3FloatField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0.0);
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0.0);
 };
 
 
 /**
  * Sets the value of a non-extension boolean field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {boolean} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3BooleanField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, false);
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, false);
 };
 
 
 /**
  * Sets the value of a non-extension String field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {string} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3StringField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, "");
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, '');
 };
 
 
 /**
  * Sets the value of a non-extension Bytes field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {!Uint8Array|string} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3BytesField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, "");
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, '');
 };
 
 
 /**
  * Sets the value of a non-extension enum field of a proto3
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {number} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3EnumField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0);
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, 0);
 };
 
 
 /**
  * Sets the value of a non-extension int field of a proto3 that has jstype set
  * to String.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {string} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setProto3StringIntField = function(msg, fieldNumber, value) {
-  jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, "0");
+  return jspb.Message.setFieldIgnoringDefault_(msg, fieldNumber, value, '0');
 };
 
 /**
  * Sets the value of a non-extension primitive field, with proto3 (non-nullable
  * primitives) semantics of ignoring values that are equal to the type's
  * default.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {!Uint8Array|string|number|boolean|undefined} value New value
  * @param {!Uint8Array|string|number|boolean} defaultValue The default value.
+ * @return {T} return msg
+ * @template T
  * @private
  */
 jspb.Message.setFieldIgnoringDefault_ = function(
     msg, fieldNumber, value, defaultValue) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   if (value !== defaultValue) {
     jspb.Message.setField(msg, fieldNumber, value);
   } else {
     msg.array[jspb.Message.getIndex_(msg, fieldNumber)] = null;
   }
+  return msg;
 };
 
 
 /**
  * Adds a value to a repeated, primitive field.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {string|number|boolean|!Uint8Array} value New value
  * @param {number=} opt_index Index where to put new value.
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.addToRepeatedField = function(msg, fieldNumber, value, opt_index) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   var arr = jspb.Message.getRepeatedField(msg, fieldNumber);
   if (opt_index != undefined) {
     arr.splice(opt_index, 0, value);
   } else {
     arr.push(value);
   }
+  return msg;
 };
 
 
 /**
  * Sets the value of a field in a oneof union and clears all other fields in
  * the union.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {!Array<number>} oneof The fields belonging to the union.
  * @param {string|number|boolean|Uint8Array|Array|undefined} value New value
+ * @return {T} return msg
+ * @template T
  * @protected
  */
 jspb.Message.setOneofField = function(msg, fieldNumber, oneof, value) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   var currentCase = jspb.Message.computeOneofCase(msg, oneof);
   if (currentCase && currentCase !== fieldNumber && value !== undefined) {
     if (msg.wrappers_ && currentCase in msg.wrappers_) {
@@ -1144,7 +1163,7 @@ jspb.Message.setOneofField = function(msg, fieldNumber, oneof, value) {
     }
     jspb.Message.setField(msg, currentCase, undefined);
   }
-  jspb.Message.setField(msg, fieldNumber, value);
+  return jspb.Message.setField(msg, fieldNumber, value);
 };
 
 
@@ -1258,48 +1277,61 @@ jspb.Message.wrapRepeatedField_ = function(msg, ctor, fieldNumber) {
 
 /**
  * Sets a proto field and syncs it to the backing array.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {?jspb.Message|?jspb.Map|undefined} value A new value for this proto
  * field.
+ * @return {T} the msg
+ * @template T
  * @protected
  */
 jspb.Message.setWrapperField = function(msg, fieldNumber, value) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   if (!msg.wrappers_) {
     msg.wrappers_ = {};
   }
   var data = value ? value.toArray() : value;
   msg.wrappers_[fieldNumber] = value;
-  jspb.Message.setField(msg, fieldNumber, data);
+  return jspb.Message.setField(msg, fieldNumber, data);
 };
+
 
 
 /**
  * Sets a proto field in a oneof union and syncs it to the backing array.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {!Array<number>} oneof The fields belonging to the union.
  * @param {jspb.Message|undefined} value A new value for this proto field.
+ * @return {T} the msg
+ * @template T
  * @protected
  */
 jspb.Message.setOneofWrapperField = function(msg, fieldNumber, oneof, value) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   if (!msg.wrappers_) {
     msg.wrappers_ = {};
   }
   var data = value ? value.toArray() : value;
   msg.wrappers_[fieldNumber] = value;
-  jspb.Message.setOneofField(msg, fieldNumber, oneof, data);
+  return jspb.Message.setOneofField(msg, fieldNumber, oneof, data);
 };
 
 
 /**
  * Sets a repeated proto field and syncs it to the backing array.
- * @param {!jspb.Message} msg A jspb proto.
+ * @param {T} msg A jspb proto.
  * @param {number} fieldNumber The field number.
  * @param {Array<!jspb.Message>|undefined} value An array of protos.
+ * @return {T} the msg
+ * @template T
  * @protected
  */
 jspb.Message.setRepeatedWrapperField = function(msg, fieldNumber, value) {
+  // TODO(b/35241823): replace this with a bounded generic when available
+  goog.asserts.assertInstanceof(msg, jspb.Message);
   if (!msg.wrappers_) {
     msg.wrappers_ = {};
   }
@@ -1308,7 +1340,7 @@ jspb.Message.setRepeatedWrapperField = function(msg, fieldNumber, value) {
     data[i] = value[i].toArray();
   }
   msg.wrappers_[fieldNumber] = value;
-  jspb.Message.setField(msg, fieldNumber, data);
+  return jspb.Message.setField(msg, fieldNumber, data);
 };
 
 
@@ -1828,7 +1860,6 @@ jspb.Message.clone_ = function(obj) {
  * @param {Function} constructor The message constructor.
  */
 jspb.Message.registerMessageType = function(id, constructor) {
-  jspb.Message.registry_[id] = constructor;
   // This is needed so we can later access messageId directly on the contructor,
   // otherwise it is not available due to 'property collapsing' by the compiler.
   /**
@@ -1836,15 +1867,6 @@ jspb.Message.registerMessageType = function(id, constructor) {
    */
   constructor.messageId = id;
 };
-
-
-/**
- * The registry of message ids to message constructors.
- * @private
- */
-jspb.Message.registry_ = {};
-
-
 /**
  * The extensions registered on MessageSet. This is a map of extension
  * field number to field info object. This should be considered as a

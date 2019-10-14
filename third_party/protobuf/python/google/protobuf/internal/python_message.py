@@ -620,7 +620,7 @@ class _FieldProperty(property):
 def _AddPropertiesForRepeatedField(field, cls):
   """Adds a public property for a "repeated" protocol message field.  Clients
   can use this property to get the value of the field, which will be either a
-  _RepeatedScalarFieldContainer or _RepeatedCompositeFieldContainer (see
+  RepeatedScalarFieldContainer or RepeatedCompositeFieldContainer (see
   below).
 
   Note that when clients add values to these containers, we perform
@@ -676,7 +676,6 @@ def _AddPropertiesForNonRepeatedScalarField(field, cls):
   property_name = _PropertyName(proto_field_name)
   type_checker = type_checkers.GetTypeChecker(field)
   default_value = field.default_value
-  valid_values = set()
   is_proto3 = field.containing_type.syntax == 'proto3'
 
   def getter(self):
@@ -692,7 +691,11 @@ def _AddPropertiesForNonRepeatedScalarField(field, cls):
     # pylint: disable=protected-access
     # Testing the value for truthiness captures all of the proto3 defaults
     # (0, 0.0, enum 0, and False).
-    new_value = type_checker.CheckValue(new_value)
+    try:
+      new_value = type_checker.CheckValue(new_value)
+    except TypeError as e:
+      raise TypeError(
+          'Cannot set %s to %.1024r: %s' % (field.full_name, new_value, e))
     if clear_when_set_to_default and not new_value:
       self._fields.pop(field, None)
     else:
@@ -781,7 +784,8 @@ def _AddStaticMethods(cls):
   def RegisterExtension(extension_handle):
     extension_handle.containing_type = cls.DESCRIPTOR
     # TODO(amauryfa): Use cls.MESSAGE_FACTORY.pool when available.
-    cls.DESCRIPTOR.file.pool.AddExtensionDescriptor(extension_handle)
+    # pylint: disable=protected-access
+    cls.DESCRIPTOR.file.pool._AddExtensionDescriptor(extension_handle)
     _AttachFieldHelpers(cls, extension_handle)
   cls.RegisterExtension = staticmethod(RegisterExtension)
 
@@ -1068,7 +1072,6 @@ def _AddSerializeToStringMethod(message_descriptor, cls):
 
   def SerializeToString(self, **kwargs):
     # Check if the message has all of its required fields set.
-    errors = []
     if not self.IsInitialized():
       raise message_mod.EncodeError(
           'Message %s is missing required fields: %s' % (

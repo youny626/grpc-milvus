@@ -43,14 +43,12 @@
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/stubs/stringprintf.h>
 #include <google/protobuf/stubs/strutil.h>
-
 #include <google/protobuf/compiler/scc.h>
 #include <google/protobuf/compiler/js/well_known_types_embed.h>
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/descriptor.h>
-
 
 namespace google {
 namespace protobuf {
@@ -1118,9 +1116,6 @@ std::string JSBinaryWriterMethodName(const GeneratorOptions& options,
          JSBinaryReadWriteMethodName(field, /* is_writer = */ true);
 }
 
-std::string JSReturnClause(const FieldDescriptor* desc) {
-  return "";
-}
 
 std::string JSTypeTag(const FieldDescriptor* desc) {
   switch (desc->type()) {
@@ -1156,10 +1151,6 @@ std::string JSTypeTag(const FieldDescriptor* desc) {
   return "";
 }
 
-std::string JSReturnDoc(const GeneratorOptions& options,
-                        const FieldDescriptor* desc) {
-  return "";
-}
 
 bool HasRepeatedFields(const GeneratorOptions& options,
                        const Descriptor* desc) {
@@ -1426,11 +1417,6 @@ bool HasFieldPresence(const GeneratorOptions& options,
     return false;
   }
 
-  if (UseBrokenPresenceSemantics(options, field)) {
-    // Proto3 files with broken presence semantics have field presence.
-    return true;
-  }
-
   return field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE ||
          field->containing_oneof() != NULL ||
          field->file()->syntax() == FileDescriptor::SYNTAX_PROTO2;
@@ -1651,7 +1637,11 @@ bool IsWellKnownTypeFile(const FileDescriptor* file) {
 }  // anonymous namespace
 
 void Generator::GenerateHeader(const GeneratorOptions& options,
+                               const FileDescriptor* file,
                                io::Printer* printer) const {
+  if (file != nullptr) {
+    printer->Print("// source: $filename$\n", "filename", file->name());
+  }
   printer->Print(
       "/**\n"
       " * @fileoverview\n"
@@ -1689,6 +1679,27 @@ void Generator::FindProvides(const GeneratorOptions& options,
   printer->Print("\n");
 }
 
+void FindProvidesForOneOfEnum(const GeneratorOptions& options,
+                              const OneofDescriptor* oneof,
+                              std::set<std::string>* provided) {
+  std::string name = GetMessagePath(options, oneof->containing_type()) + "." +
+                     JSOneofName(oneof) + "Case";
+  provided->insert(name);
+}
+
+void FindProvidesForOneOfEnums(const GeneratorOptions& options,
+                               io::Printer* printer, const Descriptor* desc,
+                               std::set<std::string>* provided) {
+  if (HasOneofFields(desc)) {
+    for (int i = 0; i < desc->oneof_decl_count(); i++) {
+      if (IgnoreOneof(desc->oneof_decl(i))) {
+        continue;
+      }
+      FindProvidesForOneOfEnum(options, desc->oneof_decl(i), provided);
+    }
+  }
+}
+
 void Generator::FindProvidesForMessage(const GeneratorOptions& options,
                                        io::Printer* printer,
                                        const Descriptor* desc,
@@ -1703,11 +1714,13 @@ void Generator::FindProvidesForMessage(const GeneratorOptions& options,
   for (int i = 0; i < desc->enum_type_count(); i++) {
     FindProvidesForEnum(options, printer, desc->enum_type(i), provided);
   }
+
+  FindProvidesForOneOfEnums(options, printer, desc, provided);
+
   for (int i = 0; i < desc->nested_type_count(); i++) {
     FindProvidesForMessage(options, printer, desc->nested_type(i), provided);
   }
 }
-
 void Generator::FindProvidesForEnum(const GeneratorOptions& options,
                                     io::Printer* printer,
                                     const EnumDescriptor* enumdesc,
@@ -2366,7 +2379,7 @@ void Generator::GenerateClassFieldToObject(const GeneratorOptions& options,
     if (field->file()->syntax() == FileDescriptor::SYNTAX_PROTO3 &&
         // Repeated fields get initialized to their default in the constructor
         // (why?), so we emit a plain getField() call for them.
-        !field->is_repeated() && !UseBrokenPresenceSemantics(options, field)) {
+        !field->is_repeated()) {
       // Proto3 puts all defaults (including implicit defaults) in toObject().
       // But for proto2 we leave the existing semantics unchanged: unset fields
       // without default are unset.
@@ -2403,18 +2416,22 @@ void Generator::GenerateObjectTypedef(const GeneratorOptions& options,
       "method.\n"
       " * @record\n"
       " */\n"
-      "$typeName$ = function() {};\n\n",
+      "$typeName$ = function() {\n",
       "messageName", desc->name(), "typeName", type_name);
 
   for (int i = 0; i < desc->field_count(); i++) {
+    if (i > 0) {
+      printer->Print("\n");
+    }
     printer->Print(
-        "/** @type {$fieldType$|undefined} */\n"
-        "$typeName$.prototype.$fieldName$;\n\n",
-        "typeName", type_name, "fieldName",
-        JSObjectFieldName(options, desc->field(i)),
+        "  /** @type {$fieldType$|undefined} */\n"
+        "  this.$fieldName$;\n",
+        "fieldName", JSObjectFieldName(options, desc->field(i)),
         // TODO(b/121097361): Add type checking for field values.
         "fieldType", "?");
   }
+
+  printer->Print("};\n\n");
 }
 
 void Generator::GenerateClassFromObject(const GeneratorOptions& options,
@@ -2646,30 +2663,31 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
         (field->label() == FieldDescriptor::LABEL_REQUIRED ? ", 1" : ""));
     printer->Annotate("gettername", field);
     printer->Print(
-        "/** @param {$optionaltype$} value$returndoc$ */\n"
+        "/**\n"
+        " * @param {$optionaltype$} value\n"
+        " * @return {!$class$} returns this\n"
+        "*/\n"
         "$class$.prototype.$settername$ = function(value) {\n"
-        "  jspb.Message.set$oneoftag$$repeatedtag$WrapperField(",
+        "  return jspb.Message.set$oneoftag$$repeatedtag$WrapperField(",
         "optionaltype",
         JSFieldTypeAnnotation(options, field,
                               /* is_setter_argument = */ true,
                               /* force_present = */ false,
                               /* singular_if_not_packed = */ false),
-        "returndoc", JSReturnDoc(options, field), "class",
-        GetMessagePath(options, field->containing_type()), "settername",
-        "set" + JSGetterName(options, field), "oneoftag",
+        "class", GetMessagePath(options, field->containing_type()),
+        "settername", "set" + JSGetterName(options, field), "oneoftag",
         (field->containing_oneof() ? "Oneof" : ""), "repeatedtag",
         (field->is_repeated() ? "Repeated" : ""));
     printer->Annotate("settername", field);
 
     printer->Print(
-        "this, $index$$oneofgroup$, value);$returnvalue$\n"
+        "this, $index$$oneofgroup$, value);\n"
         "};\n"
         "\n"
         "\n",
         "index", JSFieldIndex(field), "oneofgroup",
         (field->containing_oneof() ? (", " + JSOneofArray(options, field))
-                                   : ""),
-        "returnvalue", JSReturnClause(field));
+                                   : ""));
 
     if (field->is_repeated()) {
       GenerateRepeatedMessageHelperMethods(options, printer, field);
@@ -2756,21 +2774,18 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
       GenerateBytesWrapper(options, printer, field, BYTES_U8);
     }
 
-    if (untyped) {
-      printer->Print(
-          "/**\n"
-          " * @param {*} value$returndoc$\n"
-          " */\n",
-          "returndoc", JSReturnDoc(options, field));
-    } else {
-      printer->Print(
-          "/** @param {$optionaltype$} value$returndoc$ */\n", "optionaltype",
-          JSFieldTypeAnnotation(options, field,
-                                /* is_setter_argument = */ true,
-                                /* force_present = */ false,
-                                /* singular_if_not_packed = */ false),
-          "returndoc", JSReturnDoc(options, field));
-    }
+    printer->Print(
+        "/**\n"
+        " * @param {$optionaltype$} value\n"
+        " * @return {!$class$} returns this\n"
+        " */\n",
+        "class", GetMessagePath(options, field->containing_type()),
+        "optionaltype",
+        untyped ? "*"
+                : JSFieldTypeAnnotation(options, field,
+                                        /* is_setter_argument = */ true,
+                                        /* force_present = */ false,
+                                        /* singular_if_not_packed = */ false));
 
     if (field->file()->syntax() == FileDescriptor::SYNTAX_PROTO3 &&
         !field->is_repeated() && !field->is_map() &&
@@ -2779,28 +2794,28 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
       // setProto3*Field function.
       printer->Print(
           "$class$.prototype.$settername$ = function(value) {\n"
-          "  jspb.Message.setProto3$typetag$Field(this, $index$, "
-          "value);$returnvalue$\n"
+          "  return jspb.Message.setProto3$typetag$Field(this, $index$, "
+          "value);"
+          "\n"
           "};\n"
           "\n"
           "\n",
           "class", GetMessagePath(options, field->containing_type()),
           "settername", "set" + JSGetterName(options, field), "typetag",
-          JSTypeTag(field), "index", JSFieldIndex(field), "returnvalue",
-          JSReturnClause(field));
+          JSTypeTag(field), "index", JSFieldIndex(field));
       printer->Annotate("settername", field);
     } else {
       // Otherwise, use the regular setField function.
       printer->Print(
           "$class$.prototype.$settername$ = function(value) {\n"
-          "  jspb.Message.set$oneoftag$Field(this, $index$",
+          "  return jspb.Message.set$oneoftag$Field(this, $index$",
           "class", GetMessagePath(options, field->containing_type()),
           "settername", "set" + JSGetterName(options, field), "oneoftag",
           (field->containing_oneof() ? "Oneof" : ""), "index",
           JSFieldIndex(field));
       printer->Annotate("settername", field);
       printer->Print(
-          "$oneofgroup$, $type$value$rptvalueinit$$typeclose$);$returnvalue$\n"
+          "$oneofgroup$, $type$value$rptvalueinit$$typeclose$);\n"
           "};\n"
           "\n"
           "\n",
@@ -2809,16 +2824,16 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
           "typeclose", untyped ? ")" : "", "oneofgroup",
           (field->containing_oneof() ? (", " + JSOneofArray(options, field))
                                      : ""),
-          "returnvalue", JSReturnClause(field), "rptvalueinit",
-          (field->is_repeated() ? " || []" : ""));
+          "rptvalueinit", (field->is_repeated() ? " || []" : ""));
     }
 
     if (untyped) {
       printer->Print(
           "/**\n"
-          " * Clears the value.$returndoc$\n"
+          " * Clears the value.\n"
+          " * @return {!$class$} returns this\n"
           " */\n",
-          "returndoc", JSReturnDoc(options, field));
+          "class", GetMessagePath(options, field->containing_type()));
     }
 
     if (field->is_repeated()) {
@@ -2832,19 +2847,18 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
     // clang-format off
     printer->Print(
         "/**\n"
-        " * Clears values from the map. The map will be non-null."
-        "$returndoc$\n"
+        " * Clears values from the map. The map will be non-null.\n"
+        " * @return {!$class$} returns this\n"
         " */\n"
         "$class$.prototype.$clearername$ = function() {\n"
-        "  this.$gettername$().clear();$returnvalue$\n"
+        "  this.$gettername$().clear();\n"
+        "  return this;"
         "};\n"
         "\n"
         "\n",
-        "returndoc", JSReturnDoc(options, field),
         "class", GetMessagePath(options, field->containing_type()),
         "clearername", "clear" + JSGetterName(options, field),
-        "gettername", "get" + JSGetterName(options, field),
-        "returnvalue", JSReturnClause(field));
+        "gettername", "get" + JSGetterName(options, field));
     // clang-format on
     printer->Annotate("clearername", field);
   } else if (field->is_repeated() ||
@@ -2854,22 +2868,21 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
     // clang-format off
     printer->Print(
         "/**\n"
-        " * $jsdoc$$returndoc$\n"
+        " * $jsdoc$\n"
+        " * @return {!$class$} returns this\n"
         " */\n"
         "$class$.prototype.$clearername$ = function() {\n"
-        "  this.$settername$($clearedvalue$);$returnvalue$\n"
+        "  return this.$settername$($clearedvalue$);\n"
         "};\n"
         "\n"
         "\n",
        "jsdoc", field->is_repeated()
            ? "Clears the list making it empty but non-null."
            : "Clears the message field making it undefined.",
-        "returndoc", JSReturnDoc(options, field),
         "class", GetMessagePath(options, field->containing_type()),
         "clearername", "clear" + JSGetterName(options, field),
         "settername", "set" + JSGetterName(options, field),
-        "clearedvalue", (field->is_repeated() ? "[]" : "undefined"),
-        "returnvalue", JSReturnClause(field));
+        "clearedvalue", (field->is_repeated() ? "[]" : "undefined"));
     // clang-format on
     printer->Annotate("clearername", field);
   } else if (HasFieldPresence(options, field)) {
@@ -2878,12 +2891,12 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
     // clang-format off
     printer->Print(
         "/**\n"
-        " * Clears the field making it undefined.$returndoc$\n"
+        " * Clears the field making it undefined.\n"
+        " * @return {!$class$} returns this\n"
         " */\n"
         "$class$.prototype.$clearername$ = function() {\n"
-        "  jspb.Message.set$maybeoneof$Field(this, "
-        "$index$$maybeoneofgroup$, ",
-        "returndoc", JSReturnDoc(options, field),
+        "  return jspb.Message.set$maybeoneof$Field(this, "
+            "$index$$maybeoneofgroup$, ",
         "class", GetMessagePath(options, field->containing_type()),
         "clearername", "clear" + JSGetterName(options, field),
         "maybeoneof", (field->containing_oneof() ? "Oneof" : ""),
@@ -2894,12 +2907,11 @@ void Generator::GenerateClassField(const GeneratorOptions& options,
     // clang-format on
     printer->Annotate("clearername", field);
     printer->Print(
-        "$clearedvalue$);$returnvalue$\n"
+        "$clearedvalue$);\n"
         "};\n"
         "\n"
         "\n",
-        "clearedvalue", (field->is_repeated() ? "[]" : "undefined"),
-        "returnvalue", JSReturnClause(field));
+        "clearedvalue", (field->is_repeated() ? "[]" : "undefined"));
   }
 
   if (HasFieldPresence(options, field)) {
@@ -2926,10 +2938,12 @@ void Generator::GenerateRepeatedPrimitiveHelperMethods(
   printer->Print(
       "/**\n"
       " * @param {$optionaltype$} value\n"
-      " * @param {number=} opt_index$returndoc$\n"
+      " * @param {number=} opt_index\n"
+      " * @return {!$class$} returns this\n"
       " */\n"
       "$class$.prototype.$addername$ = function(value, opt_index) {\n"
-      "  jspb.Message.addToRepeatedField(this, $index$",
+      "  return jspb.Message.addToRepeatedField(this, "
+      "$index$",
       "class", GetMessagePath(options, field->containing_type()), "addername",
       "add" + JSGetterName(options, field, BYTES_DEFAULT,
                            /* drop_list = */ true),
@@ -2941,20 +2955,18 @@ void Generator::GenerateRepeatedPrimitiveHelperMethods(
                                 /* singular_if_not_packed = */ false,
                                 BYTES_DEFAULT,
                                 /* force_singular = */ true),
-      "index", JSFieldIndex(field),
-      "returndoc", JSReturnDoc(options, field));
+      "index", JSFieldIndex(field));
   printer->Annotate("addername", field);
   printer->Print(
       "$oneofgroup$, $type$value$rptvalueinit$$typeclose$, "
-      "opt_index);$returnvalue$\n"
+      "opt_index);\n"
       "};\n"
       "\n"
       "\n",
       "type", untyped ? "/** @type{string|number|boolean|!Uint8Array} */(" : "",
       "typeclose", untyped ? ")" : "", "oneofgroup",
       (field->containing_oneof() ? (", " + JSOneofArray(options, field)) : ""),
-      "rptvalueinit", "",
-      "returnvalue", JSReturnClause(field));
+      "rptvalueinit", "");
   // clang-format on
 }
 
@@ -3130,6 +3142,13 @@ void Generator::GenerateClassDeserializeBinaryField(
       printer->Print(", null");
     }
     printer->Print(", $defaultKey$", "defaultKey", JSFieldDefault(key_field));
+    if (value_field->type() == FieldDescriptor::TYPE_MESSAGE) {
+      printer->Print(", new $messageType$()", "messageType",
+                     GetMessagePath(options, value_field->message_type()));
+    } else {
+      printer->Print(", $defaultValue$", "defaultValue",
+                     JSFieldDefault(value_field));
+    }
     printer->Print(");\n");
     printer->Print("         });\n");
   } else {
@@ -3343,12 +3362,21 @@ void Generator::GenerateEnum(const GeneratorOptions& options,
       enumdesc->name());
   printer->Annotate("name", enumdesc);
 
+  std::set<string> used_name;
+  std::vector<int> valid_index;
   for (int i = 0; i < enumdesc->value_count(); i++) {
+    if (enumdesc->options().allow_alias() &&
+        !used_name.insert(ToEnumCase(enumdesc->value(i)->name())).second) {
+      continue;
+    }
+    valid_index.push_back(i);
+  }
+  for (auto i : valid_index) {
     const EnumValueDescriptor* value = enumdesc->value(i);
     printer->Print("  $name$: $value$$comma$\n", "name",
                    ToEnumCase(value->name()), "value",
                    StrCat(value->number()), "comma",
-                   (i == enumdesc->value_count() - 1) ? "" : ",");
+                   (i == valid_index.back()) ? "" : ",");
     printer->Annotate("name", value);
   }
 
@@ -3610,7 +3638,7 @@ bool Generator::GenerateFile(const FileDescriptor* file,
 void Generator::GenerateFile(const GeneratorOptions& options,
                              io::Printer* printer,
                              const FileDescriptor* file) const {
-  GenerateHeader(options, printer);
+  GenerateHeader(options, file, printer);
 
   // Generate "require" statements.
   if ((options.import_style == GeneratorOptions::kImportCommonJs ||
@@ -3704,7 +3732,12 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
                            options.GetFileNameExtension();
     std::unique_ptr<io::ZeroCopyOutputStream> output(context->Open(filename));
     GOOGLE_CHECK(output.get());
-    io::Printer printer(output.get(), '$');
+    GeneratedCodeInfo annotations;
+    io::AnnotationProtoCollector<GeneratedCodeInfo> annotation_collector(
+        &annotations);
+    io::Printer printer(
+        output.get(), '$',
+        options.annotate_code ? &annotation_collector : nullptr);
 
     // Pull out all extensions -- we need these to generate all
     // provides/requires.
@@ -3716,7 +3749,11 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
       }
     }
 
-    GenerateHeader(options, &printer);
+    if (files.size() == 1) {
+      GenerateHeader(options, files[0], &printer);
+    } else {
+      GenerateHeader(options, nullptr, &printer);
+    }
 
     std::set<std::string> provided;
     FindProvides(options, &printer, files, &provided);
@@ -3735,6 +3772,9 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
 
     if (printer.failed()) {
       return false;
+    }
+    if (options.annotate_code) {
+      EmbedCodeAnnotations(annotations, &printer);
     }
   } else if (options.output_mode() == GeneratorOptions::kOneOutputFilePerSCC) {
     std::set<const Descriptor*> have_printed;
@@ -3776,7 +3816,7 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
             output.get(), '$',
             options.annotate_code ? &annotation_collector : nullptr);
 
-        GenerateHeader(options, &printer);
+        GenerateHeader(options, file, &printer);
 
         std::set<std::string> provided;
         for (auto one_desc : scc->descriptors) {
@@ -3829,7 +3869,7 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
             output.get(), '$',
             options.annotate_code ? &annotation_collector : nullptr);
 
-        GenerateHeader(options, &printer);
+        GenerateHeader(options, file, &printer);
 
         std::set<std::string> provided;
         FindProvidesForEnum(options, &printer, enumdesc, &provided);
@@ -3861,7 +3901,7 @@ bool Generator::GenerateAll(const std::vector<const FileDescriptor*>& files,
             output.get(), '$',
             options.annotate_code ? &annotation_collector : nullptr);
 
-        GenerateHeader(options, &printer);
+        GenerateHeader(options, file, &printer);
 
         std::set<std::string> provided;
         std::vector<const FieldDescriptor*> fields;
