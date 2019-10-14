@@ -296,12 +296,15 @@ class PROTOBUF_EXPORT Message : public MessageLite {
   void Clear() override;
   bool IsInitialized() const override;
   void CheckTypeAndMergeFrom(const MessageLite& other) override;
+#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
   // Reflective parser
   const char* _InternalParse(const char* ptr,
                              internal::ParseContext* ctx) override;
+#else
+  bool MergePartialFromCodedStream(io::CodedInputStream* input) override;
+#endif
   size_t ByteSizeLong() const override;
-  uint8* InternalSerializeWithCachedSizesToArray(
-      uint8* target, io::EpsCopyOutputStream* stream) const override;
+  void SerializeWithCachedSizes(io::CodedOutputStream* output) const override;
 
  private:
   // This is called only by the default implementation of ByteSize(), to
@@ -535,7 +538,7 @@ class PROTOBUF_EXPORT Reflection final {
   void SetBool(Message* message, const FieldDescriptor* field,
                bool value) const;
   void SetString(Message* message, const FieldDescriptor* field,
-                 std::string value) const;
+                 const std::string& value) const;
   void SetEnum(Message* message, const FieldDescriptor* field,
                const EnumValueDescriptor* value) const;
   // Set an enum field's value with an integer rather than EnumValueDescriptor.
@@ -635,7 +638,7 @@ class PROTOBUF_EXPORT Reflection final {
   void SetRepeatedBool(Message* message, const FieldDescriptor* field,
                        int index, bool value) const;
   void SetRepeatedString(Message* message, const FieldDescriptor* field,
-                         int index, std::string value) const;
+                         int index, const std::string& value) const;
   void SetRepeatedEnum(Message* message, const FieldDescriptor* field,
                        int index, const EnumValueDescriptor* value) const;
   // Set an enum field's value with an integer rather than EnumValueDescriptor.
@@ -672,7 +675,7 @@ class PROTOBUF_EXPORT Reflection final {
   void AddBool(Message* message, const FieldDescriptor* field,
                bool value) const;
   void AddString(Message* message, const FieldDescriptor* field,
-                 std::string value) const;
+                 const std::string& value) const;
   void AddEnum(Message* message, const FieldDescriptor* field,
                const EnumValueDescriptor* value) const;
   // Add an integer value to a repeated enum field rather than
@@ -1200,7 +1203,9 @@ T* DynamicCastToGenerated(Message* from) {
 // of loops (on x86-64 it compiles into two "mov" instructions).
 template <typename T>
 void LinkMessageReflection() {
-  internal::StrongReference(T::default_instance);
+  typedef const T& GetDefaultInstanceFunction();
+  GetDefaultInstanceFunction* volatile unused = &T::default_instance;
+  (void)&unused;  // Use address to avoid an extra load of volatile variable.
 }
 
 // =============================================================================

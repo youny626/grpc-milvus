@@ -37,6 +37,7 @@
 #include <google/protobuf/util/internal/utility.h>
 #include <google/protobuf/util/type_resolver.h>
 #include <google/protobuf/stubs/strutil.h>
+
 #include <google/protobuf/stubs/status.h>
 
 // clang-format off

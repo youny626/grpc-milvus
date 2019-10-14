@@ -51,6 +51,7 @@
 #include <gmock/gmock.h>
 #include <google/protobuf/testing/googletest.h>
 #include <gtest/gtest.h>
+
 #include <google/protobuf/stubs/stl_util.h>
 
 namespace google {
@@ -1834,9 +1835,7 @@ class RepeatedFieldInsertionIteratorsTest : public testing::Test {
   }
 
   virtual void TearDown() {
-    for (auto ptr : nested_ptrs) {
-      delete ptr;
-    }
+    STLDeleteContainerPointers(nested_ptrs.begin(), nested_ptrs.end());
   }
 };
 

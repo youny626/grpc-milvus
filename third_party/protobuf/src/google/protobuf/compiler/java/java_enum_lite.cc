@@ -43,6 +43,7 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/stubs/strutil.h>
+
 #include <google/protobuf/stubs/map_util.h>
 
 namespace google {
@@ -149,8 +150,6 @@ void EnumLiteGenerator::Generate(io::Printer* printer) {
       "}\n"
       "\n"
       "/**\n"
-      " * @param value The number of the enum to look for.\n"
-      " * @return The enum associated with the given number.\n"
       " * @deprecated Use {@link #forNumber(int)} instead.\n"
       " */\n"
       "@java.lang.Deprecated\n"

@@ -44,6 +44,7 @@
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/stubs/strutil.h>
 
+
 namespace google {
 namespace protobuf {
 namespace compiler {
@@ -174,9 +175,6 @@ void EnumGenerator::Generate(io::Printer* printer) {
       "}\n"
       "\n"
       "/**\n"
-      " * @param value The numeric wire value of the corresponding enum "
-      "entry.\n"
-      " * @return The enum associated with the given numeric wire value.\n"
       " * @deprecated Use {@link #forNumber(int)} instead.\n"
       " */\n"
       "@java.lang.Deprecated\n"
@@ -184,11 +182,6 @@ void EnumGenerator::Generate(io::Printer* printer) {
       "  return forNumber(value);\n"
       "}\n"
       "\n"
-      "/**\n"
-      " * @param value The numeric wire value of the corresponding enum "
-      "entry.\n"
-      " * @return The enum associated with the given numeric wire value.\n"
-      " */\n"
       "public static $classname$ forNumber(int value) {\n"
       "  switch (value) {\n",
       "classname", descriptor_->name());

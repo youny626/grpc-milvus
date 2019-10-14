@@ -67,6 +67,7 @@ DefaultValueObjectWriter::DefaultValueObjectWriter(
       suppress_empty_list_(false),
       preserve_proto_field_names_(false),
       use_ints_for_enums_(false),
+      field_scrub_callback_(nullptr),
       ow_(ow) {}
 
 DefaultValueObjectWriter::~DefaultValueObjectWriter() {
@@ -182,8 +183,8 @@ DefaultValueObjectWriter* DefaultValueObjectWriter::RenderNull(
 }
 
 void DefaultValueObjectWriter::RegisterFieldScrubCallBack(
-    FieldScrubCallBack field_scrub_callback) {
-  field_scrub_callback_ = std::move(field_scrub_callback);
+    FieldScrubCallBackPtr field_scrub_callback) {
+  field_scrub_callback_.reset(field_scrub_callback.release());
 }
 
 DefaultValueObjectWriter::Node* DefaultValueObjectWriter::CreateNewNode(
@@ -191,10 +192,10 @@ DefaultValueObjectWriter::Node* DefaultValueObjectWriter::CreateNewNode(
     const DataPiece& data, bool is_placeholder,
     const std::vector<std::string>& path, bool suppress_empty_list,
     bool preserve_proto_field_names, bool use_ints_for_enums,
-    FieldScrubCallBack field_scrub_callback) {
+    FieldScrubCallBack* field_scrub_callback) {
   return new Node(name, type, kind, data, is_placeholder, path,
                   suppress_empty_list, preserve_proto_field_names,
-                  use_ints_for_enums, std::move(field_scrub_callback));
+                  use_ints_for_enums, field_scrub_callback);
 }
 
 DefaultValueObjectWriter::Node::Node(
@@ -202,7 +203,7 @@ DefaultValueObjectWriter::Node::Node(
     const DataPiece& data, bool is_placeholder,
     const std::vector<std::string>& path, bool suppress_empty_list,
     bool preserve_proto_field_names, bool use_ints_for_enums,
-    FieldScrubCallBack field_scrub_callback)
+    FieldScrubCallBack* field_scrub_callback)
     : name_(name),
       type_(type),
       kind_(kind),
@@ -213,7 +214,7 @@ DefaultValueObjectWriter::Node::Node(
       suppress_empty_list_(suppress_empty_list),
       preserve_proto_field_names_(preserve_proto_field_names),
       use_ints_for_enums_(use_ints_for_enums),
-      field_scrub_callback_(std::move(field_scrub_callback)) {}
+      field_scrub_callback_(field_scrub_callback) {}
 
 DefaultValueObjectWriter::Node* DefaultValueObjectWriter::Node::FindChild(
     StringPiece name) {
@@ -328,7 +329,8 @@ void DefaultValueObjectWriter::Node::PopulateChildren(
       path.insert(path.begin(), path_.begin(), path_.end());
     }
     path.push_back(field.name());
-    if (field_scrub_callback_ && field_scrub_callback_(path, &field)) {
+    if (field_scrub_callback_ != nullptr &&
+        field_scrub_callback_->Run(path, &field)) {
       continue;
     }
 
@@ -489,10 +491,10 @@ DefaultValueObjectWriter* DefaultValueObjectWriter::StartObject(
     StringPiece name) {
   if (current_ == nullptr) {
     std::vector<std::string> path;
-    root_.reset(CreateNewNode(std::string(name), &type_, OBJECT,
-                              DataPiece::NullData(), false, path,
-                              suppress_empty_list_, preserve_proto_field_names_,
-                              use_ints_for_enums_, field_scrub_callback_));
+    root_.reset(CreateNewNode(
+        std::string(name), &type_, OBJECT, DataPiece::NullData(), false, path,
+        suppress_empty_list_, preserve_proto_field_names_, use_ints_for_enums_,
+        field_scrub_callback_.get()));
     root_->PopulateChildren(typeinfo_);
     current_ = root_.get();
     return this;
@@ -510,7 +512,7 @@ DefaultValueObjectWriter* DefaultValueObjectWriter::StartObject(
                       OBJECT, DataPiece::NullData(), false,
                       child == nullptr ? current_->path() : child->path(),
                       suppress_empty_list_, preserve_proto_field_names_,
-                      use_ints_for_enums_, field_scrub_callback_));
+                      use_ints_for_enums_, field_scrub_callback_.get()));
     child = node.get();
     current_->AddChild(node.release());
   }
@@ -540,10 +542,10 @@ DefaultValueObjectWriter* DefaultValueObjectWriter::StartList(
     StringPiece name) {
   if (current_ == nullptr) {
     std::vector<std::string> path;
-    root_.reset(CreateNewNode(std::string(name), &type_, LIST,
-                              DataPiece::NullData(), false, path,
-                              suppress_empty_list_, preserve_proto_field_names_,
-                              use_ints_for_enums_, field_scrub_callback_));
+    root_.reset(CreateNewNode(
+        std::string(name), &type_, LIST, DataPiece::NullData(), false, path,
+        suppress_empty_list_, preserve_proto_field_names_, use_ints_for_enums_,
+        field_scrub_callback_.get()));
     current_ = root_.get();
     return this;
   }
@@ -554,7 +556,7 @@ DefaultValueObjectWriter* DefaultValueObjectWriter::StartList(
         std::string(name), nullptr, LIST, DataPiece::NullData(), false,
         child == nullptr ? current_->path() : child->path(),
         suppress_empty_list_, preserve_proto_field_names_, use_ints_for_enums_,
-        field_scrub_callback_));
+        field_scrub_callback_.get()));
     child = node.get();
     current_->AddChild(node.release());
   }
@@ -616,7 +618,7 @@ void DefaultValueObjectWriter::RenderDataPiece(StringPiece name,
         CreateNewNode(std::string(name), nullptr, PRIMITIVE, data, false,
                       child == nullptr ? current_->path() : child->path(),
                       suppress_empty_list_, preserve_proto_field_names_,
-                      use_ints_for_enums_, field_scrub_callback_));
+                      use_ints_for_enums_, field_scrub_callback_.get()));
     current_->AddChild(node.release());
   } else {
     child->set_data(data);

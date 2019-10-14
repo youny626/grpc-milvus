@@ -33,6 +33,7 @@
 //  Sanjay Ghemawat, Jeff Dean, and others.
 
 #include <google/protobuf/stubs/casts.h>
+
 #include <google/protobuf/stubs/strutil.h>
 #include <google/protobuf/test_util.h>
 #include <google/protobuf/test_util2.h>

@@ -37,7 +37,6 @@
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
-
 #include <algorithm>
 #include <climits>
 #include <limits>
@@ -46,6 +45,7 @@
 #include <google/protobuf/stubs/stringprintf.h>
 #include <google/protobuf/any.h>
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/io/strtod.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
@@ -54,14 +54,17 @@
 #include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/map_field.h>
 #include <google/protobuf/message.h>
-#include <google/protobuf/port_def.inc>
 #include <google/protobuf/repeated_field.h>
 #include <google/protobuf/unknown_field_set.h>
 #include <google/protobuf/wire_format_lite.h>
 #include <google/protobuf/stubs/strutil.h>
-#include <google/protobuf/io/strtod.h>
+
+
+
 #include <google/protobuf/stubs/map_util.h>
 #include <google/protobuf/stubs/stl_util.h>
+
+#include <google/protobuf/port_def.inc>
 
 
 namespace google {
@@ -125,6 +128,15 @@ void Message::PrintDebugString() const { printf("%s", DebugString().c_str()); }
 
 // ===========================================================================
 // Implementation of the parse information tree class.
+TextFormat::ParseInfoTree::ParseInfoTree() {}
+
+TextFormat::ParseInfoTree::~ParseInfoTree() {
+  // Remove any nested information trees, as they are owned by this tree.
+  for (NestedMap::iterator it = nested_.begin(); it != nested_.end(); ++it) {
+    STLDeleteElements(&(it->second));
+  }
+}
+
 void TextFormat::ParseInfoTree::RecordLocation(
     const FieldDescriptor* field, TextFormat::ParseLocation location) {
   locations_[field].push_back(location);
@@ -133,9 +145,11 @@ void TextFormat::ParseInfoTree::RecordLocation(
 TextFormat::ParseInfoTree* TextFormat::ParseInfoTree::CreateNested(
     const FieldDescriptor* field) {
   // Owned by us in the map.
-  auto& vec = nested_[field];
-  vec.emplace_back(new TextFormat::ParseInfoTree());
-  return vec.back().get();
+  TextFormat::ParseInfoTree* instance = new TextFormat::ParseInfoTree();
+  std::vector<TextFormat::ParseInfoTree*>* trees = &nested_[field];
+  GOOGLE_CHECK(trees);
+  trees->push_back(instance);
+  return instance;
 }
 
 void CheckFieldIndex(const FieldDescriptor* field, int index) {
@@ -175,12 +189,13 @@ TextFormat::ParseInfoTree* TextFormat::ParseInfoTree::GetTreeForNested(
     index = 0;
   }
 
-  auto it = nested_.find(field);
-  if (it == nested_.end() || index >= it->second.size()) {
+  const std::vector<TextFormat::ParseInfoTree*>* trees =
+      FindOrNull(nested_, field);
+  if (trees == nullptr || index >= trees->size()) {
     return nullptr;
   }
 
-  return it->second[index].get();
+  return (*trees)[index];
 }
 
 namespace {
@@ -1236,10 +1251,6 @@ class TextFormat::Printer::TextGenerator
     --indent_level_;
   }
 
-  size_t GetCurrentIndentationSize() const override {
-    return 2 * indent_level_;
-  }
-
   // Print text to the output stream.
   void Print(const char* text, size_t size) override {
     if (indent_level_ > 0) {
@@ -1310,7 +1321,7 @@ class TextFormat::Printer::TextGenerator
       return;
     }
     GOOGLE_DCHECK(!failed_);
-    int size = GetCurrentIndentationSize();
+    int size = 2 * indent_level_;
 
     while (size > buffer_size_) {
       // Data exceeds space in the buffer. Write what we can and request a new
@@ -1620,11 +1631,11 @@ void TextFormat::FastFieldValuePrinter::PrintUInt64(
 }
 void TextFormat::FastFieldValuePrinter::PrintFloat(
     float val, BaseTextGenerator* generator) const {
-  generator->PrintString(!std::isnan(val) ? SimpleFtoa(val) : "nan");
+  generator->PrintString(SimpleFtoa(val));
 }
 void TextFormat::FastFieldValuePrinter::PrintDouble(
     double val, BaseTextGenerator* generator) const {
-  generator->PrintString(!std::isnan(val) ? SimpleDtoa(val) : "nan");
+  generator->PrintString(SimpleDtoa(val));
 }
 void TextFormat::FastFieldValuePrinter::PrintEnum(
     int32 val, const std::string& name, BaseTextGenerator* generator) const {
@@ -1796,6 +1807,11 @@ TextFormat::Printer::Printer()
   SetUseUtf8StringEscaping(false);
 }
 
+TextFormat::Printer::~Printer() {
+  STLDeleteValues(&custom_printers_);
+  STLDeleteValues(&custom_message_printers_);
+}
+
 void TextFormat::Printer::SetUseUtf8StringEscaping(bool as_utf8) {
   SetDefaultFieldValuePrinter(as_utf8 ? new FastFieldValuePrinterUtf8Escaping()
                                       : new FastFieldValuePrinter());
@@ -1816,45 +1832,28 @@ bool TextFormat::Printer::RegisterFieldValuePrinter(
   if (field == nullptr || printer == nullptr) {
     return false;
   }
-  std::unique_ptr<FieldValuePrinterWrapper> wrapper(
-      new FieldValuePrinterWrapper(nullptr));
-  auto pair = custom_printers_.insert(std::make_pair(field, nullptr));
-  if (pair.second) {
+  FieldValuePrinterWrapper* const wrapper =
+      new FieldValuePrinterWrapper(nullptr);
+  if (custom_printers_.insert(std::make_pair(field, wrapper)).second) {
     wrapper->SetDelegate(printer);
-    pair.first->second = std::move(wrapper);
     return true;
   } else {
+    delete wrapper;
     return false;
   }
 }
 
 bool TextFormat::Printer::RegisterFieldValuePrinter(
     const FieldDescriptor* field, const FastFieldValuePrinter* printer) {
-  if (field == nullptr || printer == nullptr) {
-    return false;
-  }
-  auto pair = custom_printers_.insert(std::make_pair(field, nullptr));
-  if (pair.second) {
-    pair.first->second.reset(printer);
-    return true;
-  } else {
-    return false;
-  }
+  return field != nullptr && printer != nullptr &&
+         custom_printers_.insert(std::make_pair(field, printer)).second;
 }
 
 bool TextFormat::Printer::RegisterMessagePrinter(
     const Descriptor* descriptor, const MessagePrinter* printer) {
-  if (descriptor == nullptr || printer == nullptr) {
-    return false;
-  }
-  auto pair =
-      custom_message_printers_.insert(std::make_pair(descriptor, nullptr));
-  if (pair.second) {
-    pair.first->second.reset(printer);
-    return true;
-  } else {
-    return false;
-  }
+  return descriptor != nullptr && printer != nullptr &&
+         custom_message_printers_.insert(std::make_pair(descriptor, printer))
+             .second;
 }
 
 bool TextFormat::Printer::PrintToString(const Message& message,
@@ -1955,7 +1954,8 @@ bool TextFormat::Printer::PrintAny(const Message& message,
   generator->PrintLiteral("[");
   generator->PrintString(type_url);
   generator->PrintLiteral("]");
-  const FastFieldValuePrinter* printer = GetFieldPrinter(value_field);
+  const FastFieldValuePrinter* printer = FindWithDefault(
+      custom_printers_, value_field, default_field_value_printer_.get());
   printer->PrintMessageStart(message, -1, 0, single_line_mode_, generator);
   generator->Indent();
   Print(*value_message, generator);
@@ -2230,7 +2230,8 @@ void TextFormat::Printer::PrintField(const Message& message,
     PrintFieldName(message, field_index, count, reflection, field, generator);
 
     if (field->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE) {
-      const FastFieldValuePrinter* printer = GetFieldPrinter(field);
+      const FastFieldValuePrinter* printer = FindWithDefault(
+          custom_printers_, field, default_field_value_printer_.get());
       const Message& sub_message =
           field->is_repeated()
               ? (is_map ? *sorted_map_field[j]
@@ -2293,7 +2294,8 @@ void TextFormat::Printer::PrintFieldName(const Message& message,
     return;
   }
 
-  const FastFieldValuePrinter* printer = GetFieldPrinter(field);
+  const FastFieldValuePrinter* printer = FindWithDefault(
+      custom_printers_, field, default_field_value_printer_.get());
   printer->PrintFieldName(message, field_index, field_count, reflection, field,
                           generator);
 }
@@ -2306,7 +2308,8 @@ void TextFormat::Printer::PrintFieldValue(const Message& message,
   GOOGLE_DCHECK(field->is_repeated() || (index == -1))
       << "Index must be -1 for non-repeated fields";
 
-  const FastFieldValuePrinter* printer = GetFieldPrinter(field);
+  const FastFieldValuePrinter* printer = FindWithDefault(
+      custom_printers_, field, default_field_value_printer_.get());
 
   switch (field->cpp_type()) {
 #define OUTPUT_FIELD(CPPTYPE, METHOD)                                \

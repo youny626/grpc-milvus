@@ -39,10 +39,8 @@
 #include <unistd.h>
 #endif
 #include <errno.h>
-
 #include <algorithm>
 #include <iostream>
-
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/io/io_win32.h>

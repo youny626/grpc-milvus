@@ -38,7 +38,7 @@ using System.Linq;
 namespace Google.Protobuf
 {
     /// <summary>
-    /// Provides extensions to messages while parsing. This API is experimental and subject to change.
+    /// Provides extensions to messages while parsing
     /// </summary>
     public sealed class ExtensionRegistry : ICollection<Extension>, IDeepCloneable<ExtensionRegistry>
     {
@@ -83,13 +83,23 @@ namespace Google.Protobuf
         }
 
         /// <summary>
+        /// Adds the specified extensions to the registry
+        /// </summary>
+        public void Add(params Extension[] newExtensions)
+        {
+            ProtoPreconditions.CheckNotNull(newExtensions, nameof(newExtensions));
+
+            Add((IEnumerable<Extension>)newExtensions);
+        }
+
+        /// <summary>
         /// Adds the specified extensions to the reigstry
         /// </summary>
-        public void AddRange(IEnumerable<Extension> extensions)
+        public void Add(IEnumerable<Extension> newExtensions)
         {
-            ProtoPreconditions.CheckNotNull(extensions, nameof(extensions));
+            ProtoPreconditions.CheckNotNull(newExtensions, nameof(newExtensions));
 
-            foreach (var extension in extensions)
+            foreach (var extension in newExtensions)
                 Add(extension);
         }
 

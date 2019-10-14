@@ -5,7 +5,6 @@ require_once('test_util.php');
 
 use Google\Protobuf\RepeatedField;
 use Google\Protobuf\GPBType;
-use Foo\TestStringValue;
 use Foo\TestAny;
 use Foo\TestEnum;
 use Foo\TestMessage;
@@ -119,19 +118,12 @@ class EncodeDecodeTest extends TestBase
         $this->assertEquals(1, $m->getValue());
     }
 
-    public function testDecodeTopLevelInt64ValueAsString()
-    {
-        $m = new Int64Value();
-        $m->mergeFromJsonString("\"1\"");
-        $this->assertEquals(1, $m->getValue());
-    }
-
-    public function testEncodeTopLevelInt64Value()
-    {
-        $m = new Int64Value();
-        $m->setValue(1);
-        $this->assertSame("\"1\"", $m->serializeToJsonString());
-    }
+    # public function testEncodeTopLevelInt64Value()
+    # {
+    #     $m = new Int64Value();
+    #     $m->setValue(1);
+    #     $this->assertSame("\"1\"", $m->serializeToJsonString());
+    # }
 
     public function testDecodeTopLevelUInt64Value()
     {
@@ -140,19 +132,12 @@ class EncodeDecodeTest extends TestBase
         $this->assertEquals(1, $m->getValue());
     }
 
-    public function testDecodeTopLevelUInt64ValueAsString()
-    {
-        $m = new UInt64Value();
-        $m->mergeFromJsonString("\"1\"");
-        $this->assertEquals(1, $m->getValue());
-    }
-
-    public function testEncodeTopLevelUInt64Value()
-    {
-        $m = new UInt64Value();
-        $m->setValue(1);
-        $this->assertSame("\"1\"", $m->serializeToJsonString());
-    }
+    # public function testEncodeTopLevelUInt64Value()
+    # {
+    #     $m = new UInt64Value();
+    #     $m->setValue(1);
+    #     $this->assertSame("\"1\"", $m->serializeToJsonString());
+    # }
 
     public function testDecodeTopLevelStringValue()
     {
@@ -166,14 +151,6 @@ class EncodeDecodeTest extends TestBase
         $m = new StringValue();
         $m->setValue("a");
         $this->assertSame("\"a\"", $m->serializeToJsonString());
-    }
-
-    public function testEncodeStringValue()
-    {
-        $m = new TestStringValue(['field' => new StringValue(['value' => ''])]);
-        var_dump($m->getField());
-        var_dump($m->serializeToJsonString());
-        $this->assertSame("{\"field\":\"\"}", $m->serializeToJsonString());
     }
 
     public function testDecodeTopLevelBytesValue()

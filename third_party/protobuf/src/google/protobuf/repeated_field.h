@@ -56,10 +56,10 @@
 #include <limits>
 #include <string>
 #include <type_traits>
-
 #include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/arena.h>
+#include <google/protobuf/implicit_weak_message.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/port.h>
 #include <google/protobuf/stubs/casts.h>
@@ -72,14 +72,18 @@
 #error "You cannot SWIG proto headers"
 #endif
 
+// Forward-declare these so that we can make them friends.
+namespace upb {
+namespace google_opensource {
+class GMR_Handlers;
+}  // namespace google_opensource
+}  // namespace upb
+
 namespace google {
 namespace protobuf {
 
 class Message;
 class Reflection;
-
-template <typename T>
-struct WeakRepeatedPtrField;
 
 namespace internal {
 
@@ -319,6 +323,7 @@ class RepeatedField final {
   friend class Arena;
   typedef void InternalArenaConstructable_;
 
+
   // Move the contents of |from| into |to|, possibly clobbering |from| in the
   // process.  For primitive types this is just a memcpy(), but it could be
   // specialized for non-primitive types to, say, swap each element instead.
@@ -438,8 +443,11 @@ struct IsMovable
 //   class TypeHandler {
 //    public:
 //     typedef MyType Type;
+//     // WeakType is almost always the same as MyType, but we use it in
+//     // ImplicitWeakTypeHandler.
+//     typedef MyType WeakType;
 //     static Type* New();
-//     static Type* NewFromPrototype(const Type* prototype,
+//     static WeakType* NewFromPrototype(const WeakType* prototype,
 //                                       Arena* arena);
 //     static void Delete(Type*);
 //     static void Clear(Type*);
@@ -452,20 +460,12 @@ class PROTOBUF_EXPORT RepeatedPtrFieldBase {
  protected:
   RepeatedPtrFieldBase();
   explicit RepeatedPtrFieldBase(Arena* arena);
-  ~RepeatedPtrFieldBase() {
-#ifndef NDEBUG
-    // Try to trigger segfault / asan failure in non-opt builds. If arena_
-    // lifetime has ended before the destructor.
-    if (arena_) (void)arena_->SpaceAllocated();
-#endif
-  }
+  ~RepeatedPtrFieldBase() {}
 
- public:
   // Must be called from destructor.
   template <typename TypeHandler>
   void Destroy();
 
- protected:
   bool empty() const;
   int size() const;
 
@@ -487,7 +487,7 @@ class PROTOBUF_EXPORT RepeatedPtrFieldBase {
   // application code.
 
   template <typename TypeHandler>
-  const typename TypeHandler::Type& Get(int index) const;
+  const typename TypeHandler::WeakType& Get(int index) const;
 
   // Creates and adds an element using the given prototype, without introducing
   // a link-time dependency on the concrete message type. This method is used to
@@ -662,9 +662,12 @@ class PROTOBUF_EXPORT RepeatedPtrFieldBase {
   // The table-driven MergePartialFromCodedStream implementation needs to
   // operate on RepeatedPtrField<MessageLite>.
   friend class MergePartialFromCodedStreamHelper;
+
+  // To parse directly into a proto2 generated class, the upb class GMR_Handlers
+  // needs to be able to modify a RepeatedPtrFieldBase directly.
+  friend class upb::google_opensource::GMR_Handlers;
+
   friend class AccessorHelper;
-  template <typename T>
-  friend struct google::protobuf::WeakRepeatedPtrField;
 
   GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(RepeatedPtrFieldBase);
 };
@@ -673,6 +676,7 @@ template <typename GenericType>
 class GenericTypeHandler {
  public:
   typedef GenericType Type;
+  typedef GenericType WeakType;
   using Movable = IsMovable<GenericType>;
 
   static inline GenericType* New(Arena* arena) {
@@ -740,21 +744,31 @@ template <>
 void GenericTypeHandler<std::string>::Merge(const std::string& from,
                                             std::string* to);
 
+// Declarations of the specialization as we cannot define them here, as the
+// header that defines ProtocolMessage depends on types defined in this header.
+#define DECLARE_SPECIALIZATIONS_FOR_BASE_PROTO_TYPES(TypeName)              \
+  template <>                                                               \
+  PROTOBUF_EXPORT TypeName* GenericTypeHandler<TypeName>::NewFromPrototype( \
+      const TypeName* prototype, Arena* arena);                             \
+  template <>                                                               \
+  PROTOBUF_EXPORT Arena* GenericTypeHandler<TypeName>::GetArena(            \
+      TypeName* value);                                                     \
+  template <>                                                               \
+  PROTOBUF_EXPORT void* GenericTypeHandler<TypeName>::GetMaybeArenaPointer( \
+      TypeName* value);
+
 // Message specialization bodies defined in message.cc. This split is necessary
 // to allow proto2-lite (which includes this header) to be independent of
 // Message.
-template <>
-PROTOBUF_EXPORT Message* GenericTypeHandler<Message>::NewFromPrototype(
-    const Message* prototype, Arena* arena);
-template <>
-PROTOBUF_EXPORT Arena* GenericTypeHandler<Message>::GetArena(Message* value);
-template <>
-PROTOBUF_EXPORT void* GenericTypeHandler<Message>::GetMaybeArenaPointer(
-    Message* value);
+DECLARE_SPECIALIZATIONS_FOR_BASE_PROTO_TYPES(Message)
+
+
+#undef DECLARE_SPECIALIZATIONS_FOR_BASE_PROTO_TYPES
 
 class StringTypeHandler {
  public:
   typedef std::string Type;
+  typedef std::string WeakType;
   using Movable = IsMovable<Type>;
 
   static inline std::string* New(Arena* arena) {
@@ -1023,9 +1037,7 @@ class RepeatedPtrField final : private internal::RepeatedPtrFieldBase {
   // For internal use only.
   //
   // This is public due to it being called by generated code.
-  void InternalSwap(RepeatedPtrField* other) {
-    internal::RepeatedPtrFieldBase::InternalSwap(other);
-  }
+  using RepeatedPtrFieldBase::InternalSwap;
 
  private:
   // Note:  RepeatedPtrField SHOULD NOT be subclassed by users.
@@ -1044,9 +1056,7 @@ class RepeatedPtrField final : private internal::RepeatedPtrFieldBase {
                                std::false_type);
 
   friend class Arena;
-
-  template <typename T>
-  friend struct WeakRepeatedPtrField;
+  friend class MessageLite;
 
   typedef void InternalArenaConstructable_;
 
@@ -1533,7 +1543,7 @@ inline bool RepeatedPtrFieldBase::empty() const { return current_size_ == 0; }
 inline int RepeatedPtrFieldBase::size() const { return current_size_; }
 
 template <typename TypeHandler>
-inline const typename TypeHandler::Type& RepeatedPtrFieldBase::Get(
+inline const typename TypeHandler::WeakType& RepeatedPtrFieldBase::Get(
     int index) const {
   GOOGLE_DCHECK_GE(index, 0);
   GOOGLE_DCHECK_LT(index, current_size_);
@@ -1660,18 +1670,18 @@ void RepeatedPtrFieldBase::MergeFromInnerLoop(void** our_elems,
   // to avoid a branch within the loop.
   for (int i = 0; i < already_allocated && i < length; i++) {
     // Already allocated: use existing element.
-    typename TypeHandler::Type* other_elem =
-        reinterpret_cast<typename TypeHandler::Type*>(other_elems[i]);
-    typename TypeHandler::Type* new_elem =
-        reinterpret_cast<typename TypeHandler::Type*>(our_elems[i]);
+    typename TypeHandler::WeakType* other_elem =
+        reinterpret_cast<typename TypeHandler::WeakType*>(other_elems[i]);
+    typename TypeHandler::WeakType* new_elem =
+        reinterpret_cast<typename TypeHandler::WeakType*>(our_elems[i]);
     TypeHandler::Merge(*other_elem, new_elem);
   }
   Arena* arena = GetArenaNoVirtual();
   for (int i = already_allocated; i < length; i++) {
     // Not allocated: alloc a new element first, then merge it.
-    typename TypeHandler::Type* other_elem =
-        reinterpret_cast<typename TypeHandler::Type*>(other_elems[i]);
-    typename TypeHandler::Type* new_elem =
+    typename TypeHandler::WeakType* other_elem =
+        reinterpret_cast<typename TypeHandler::WeakType*>(other_elems[i]);
+    typename TypeHandler::WeakType* new_elem =
         TypeHandler::NewFromPrototype(other_elem, arena);
     TypeHandler::Merge(*other_elem, new_elem);
     our_elems[i] = new_elem;

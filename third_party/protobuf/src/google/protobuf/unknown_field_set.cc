@@ -37,7 +37,6 @@
 #include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/parse_context.h>
-#include <google/protobuf/wire_format_lite.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
@@ -269,15 +268,23 @@ void UnknownField::DeepCopy(const UnknownField& other) {
 }
 
 
-uint8* UnknownField::InternalSerializeLengthDelimitedNoTag(
-    uint8* target, io::EpsCopyOutputStream* stream) const {
+void UnknownField::SerializeLengthDelimitedNoTag(
+    io::CodedOutputStream* output) const {
+  GOOGLE_DCHECK_EQ(TYPE_LENGTH_DELIMITED, type());
+  const std::string& data = *data_.length_delimited_.string_value;
+  output->WriteVarint32(data.size());
+  output->WriteRawMaybeAliased(data.data(), data.size());
+}
+
+uint8* UnknownField::SerializeLengthDelimitedNoTagToArray(uint8* target) const {
   GOOGLE_DCHECK_EQ(TYPE_LENGTH_DELIMITED, type());
   const std::string& data = *data_.length_delimited_.string_value;
   target = io::CodedOutputStream::WriteVarint32ToArray(data.size(), target);
-  target = stream->WriteRaw(data.data(), data.size(), target);
+  target = io::CodedOutputStream::WriteStringToArray(data, target);
   return target;
 }
 
+#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
 namespace internal {
 const char* PackedEnumParser(void* object, const char* ptr, ParseContext* ctx,
                              bool (*is_valid)(int),
@@ -358,5 +365,7 @@ const char* UnknownFieldParse(uint32 tag, InternalMetadataWithArena* metadata,
 }
 
 }  // namespace internal
+#endif  // GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
+
 }  // namespace protobuf
 }  // namespace google

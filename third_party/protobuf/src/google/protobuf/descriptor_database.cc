@@ -38,6 +38,7 @@
 
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/stubs/strutil.h>
+
 #include <google/protobuf/stubs/map_util.h>
 #include <google/protobuf/stubs/stl_util.h>
 
@@ -109,9 +110,6 @@ bool DescriptorDatabase::FindAllMessageNames(std::vector<std::string>* output) {
 }
 
 // ===================================================================
-
-SimpleDescriptorDatabase::SimpleDescriptorDatabase() {}
-SimpleDescriptorDatabase::~SimpleDescriptorDatabase() {}
 
 template <typename Value>
 bool SimpleDescriptorDatabase::DescriptorIndex<Value>::AddFile(
@@ -330,6 +328,11 @@ bool SimpleDescriptorDatabase::DescriptorIndex<Value>::ValidateSymbolName(
 
 // -------------------------------------------------------------------
 
+SimpleDescriptorDatabase::SimpleDescriptorDatabase() {}
+SimpleDescriptorDatabase::~SimpleDescriptorDatabase() {
+  STLDeleteElements(&files_to_delete_);
+}
+
 bool SimpleDescriptorDatabase::Add(const FileDescriptorProto& file) {
   FileDescriptorProto* new_file = new FileDescriptorProto;
   new_file->CopyFrom(file);
@@ -337,7 +340,7 @@ bool SimpleDescriptorDatabase::Add(const FileDescriptorProto& file) {
 }
 
 bool SimpleDescriptorDatabase::AddAndOwn(const FileDescriptorProto* file) {
-  files_to_delete_.emplace_back(file);
+  files_to_delete_.push_back(file);
   return index_.AddFile(*file, file);
 }
 

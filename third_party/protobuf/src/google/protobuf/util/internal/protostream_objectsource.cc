@@ -49,6 +49,8 @@
 #include <google/protobuf/util/internal/utility.h>
 #include <google/protobuf/stubs/strutil.h>
 #include <google/protobuf/stubs/casts.h>
+
+
 #include <google/protobuf/stubs/map_util.h>
 #include <google/protobuf/stubs/status_macros.h>
 
@@ -329,6 +331,7 @@ Status ProtoStreamObjectSource::RenderPacked(
   stream_->PopLimit(old_limit);
   return util::Status();
 }
+
 
 Status ProtoStreamObjectSource::RenderTimestamp(
     const ProtoStreamObjectSource* os, const google::protobuf::Type& type,
@@ -743,6 +746,7 @@ void ProtoStreamObjectSource::InitRendererMap() {
       &ProtoStreamObjectSource::RenderFieldMask;
   ::google::protobuf::internal::OnShutdown(&DeleteRendererMap);
 }
+
 
 void ProtoStreamObjectSource::DeleteRendererMap() {
   delete ProtoStreamObjectSource::renderers_;

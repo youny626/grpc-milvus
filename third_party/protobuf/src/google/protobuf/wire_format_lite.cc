@@ -37,16 +37,14 @@
 #include <stack>
 #include <string>
 #include <vector>
-
 #include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/stubs/stringprintf.h>
-#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/coded_stream_inl.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
-
-
 #include <google/protobuf/port_def.inc>
+
 
 namespace google {
 namespace protobuf {
@@ -526,8 +524,15 @@ void WireFormatLite::WriteMessage(int field_number, const MessageLite& value,
 
 void WireFormatLite::WriteSubMessageMaybeToArray(
     int size, const MessageLite& value, io::CodedOutputStream* output) {
-  output->SetCur(value.InternalSerializeWithCachedSizesToArray(
-      output->Cur(), output->EpsCopy()));
+  if (!output->IsSerializationDeterministic()) {
+    uint8* target = output->GetDirectBufferForNBytesAndAdvance(size);
+    if (target != nullptr) {
+      uint8* end = value.InternalSerializeWithCachedSizesToArray(target);
+      GOOGLE_DCHECK_EQ(end - target, size);
+      return;
+    }
+  }
+  value.SerializeWithCachedSizes(output);
 }
 
 void WireFormatLite::WriteGroupMaybeToArray(int field_number,
@@ -553,7 +558,8 @@ PROTOBUF_ALWAYS_INLINE static bool ReadBytesToString(
 inline static bool ReadBytesToString(io::CodedInputStream* input,
                                      std::string* value) {
   uint32 length;
-  return input->ReadVarint32(&length) && input->ReadString(value, length);
+  return input->ReadVarint32(&length) &&
+         input->InternalReadStringInline(value, length);
 }
 
 bool WireFormatLite::ReadBytes(io::CodedInputStream* input,

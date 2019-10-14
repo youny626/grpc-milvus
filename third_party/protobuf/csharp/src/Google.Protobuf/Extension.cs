@@ -35,7 +35,7 @@ using System;
 namespace Google.Protobuf
 {
     /// <summary>
-    /// Represents a non-generic extension definition. This API is experimental and subject to change.
+    /// Represents a non-generic extension definition
     /// </summary>
     public abstract class Extension
     {
@@ -44,9 +44,9 @@ namespace Google.Protobuf
         /// <summary>
         /// Internal use. Creates a new extension with the specified field number.
         /// </summary>
-        protected Extension(int fieldNumber)
+        protected Extension(int number)
         {
-            FieldNumber = fieldNumber;
+            FieldNumber = number;
         }
 
         internal abstract IExtensionValue CreateValue();
@@ -58,8 +58,7 @@ namespace Google.Protobuf
     }
 
     /// <summary>
-    /// Represents a type-safe extension identifier used for getting and setting single extension values in <see cref="IExtendableMessage{T}"/> instances. 
-    /// This API is experimental and subject to change.
+    /// Represents a type-safe extension identifier used for getting and setting single extension values in <see cref="IExtendableMessage{T}"/> instances
     /// </summary>
     /// <typeparam name="TTarget">The message type this field applies to</typeparam>
     /// <typeparam name="TValue">The field value type of this extension</typeparam>
@@ -70,7 +69,7 @@ namespace Google.Protobuf
         /// <summary>
         /// Creates a new extension identifier with the specified field number and codec
         /// </summary>
-        public Extension(int fieldNumber, FieldCodec<TValue> codec) : base(fieldNumber)
+        public Extension(int number, FieldCodec<TValue> codec) : base(number)
         {
             this.codec = codec;
         }
@@ -86,8 +85,7 @@ namespace Google.Protobuf
     }
 
     /// <summary>
-    /// Represents a type-safe extension identifier used for getting repeated extension values in <see cref="IExtendableMessage{T}"/> instances.
-    /// This API is experimental and subject to change.
+    /// Represents a type-safe extension identifier used for getting repeated extension values in <see cref="IExtendableMessage{T}"/> instances
     /// </summary>
     /// <typeparam name="TTarget">The message type this field applies to</typeparam>
     /// <typeparam name="TValue">The repeated field value type of this extension</typeparam>
@@ -98,7 +96,7 @@ namespace Google.Protobuf
         /// <summary>
         /// Creates a new repeated extension identifier with the specified field number and codec
         /// </summary>
-        public RepeatedExtension(int fieldNumber, FieldCodec<TValue> codec) : base(fieldNumber)
+        public RepeatedExtension(int number, FieldCodec<TValue> codec) : base(number)
         {
             this.codec = codec;
         }

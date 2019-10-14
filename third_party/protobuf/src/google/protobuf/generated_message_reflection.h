@@ -69,6 +69,7 @@ struct Metadata;
 }  // namespace protobuf
 }  // namespace google
 
+
 namespace google {
 namespace protobuf {
 namespace internal {

@@ -38,6 +38,7 @@
 #include <limits>
 #include <unordered_map>
 
+
 #include <google/protobuf/stubs/hash.h>
 
 #include <google/protobuf/stubs/casts.h>
@@ -902,8 +903,10 @@ bool Parser::ParseMessageField(FieldDescriptorProto* field,
                                const LocationRecorder& field_location,
                                const FileDescriptorProto* containing_file) {
   {
+    LocationRecorder location(field_location,
+                              FieldDescriptorProto::kLabelFieldNumber);
     FieldDescriptorProto::Label label;
-    if (ParseLabel(&label, field_location, containing_file)) {
+    if (ParseLabel(&label, containing_file)) {
       field->set_label(label);
       if (label == FieldDescriptorProto::LABEL_OPTIONAL &&
           syntax_identifier_ == "proto3") {
@@ -2204,23 +2207,18 @@ bool Parser::ParseMethodOptions(const LocationRecorder& parent_location,
 // -------------------------------------------------------------------
 
 bool Parser::ParseLabel(FieldDescriptorProto::Label* label,
-                        const LocationRecorder& field_location,
                         const FileDescriptorProto* containing_file) {
-  if (!LookingAt("optional") && !LookingAt("repeated") &&
-      !LookingAt("required")) {
-    return false;
-  }
-  LocationRecorder location(field_location,
-                            FieldDescriptorProto::kLabelFieldNumber);
   if (TryConsume("optional")) {
     *label = FieldDescriptorProto::LABEL_OPTIONAL;
+    return true;
   } else if (TryConsume("repeated")) {
     *label = FieldDescriptorProto::LABEL_REPEATED;
-  } else {
-    Consume("required");
+    return true;
+  } else if (TryConsume("required")) {
     *label = FieldDescriptorProto::LABEL_REQUIRED;
+    return true;
   }
-  return true;
+  return false;
 }
 
 bool Parser::ParseType(FieldDescriptorProto::Type* type,
