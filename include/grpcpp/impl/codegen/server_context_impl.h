@@ -207,6 +207,11 @@ class ServerContext {
     return *client_metadata_.map();
   }
 
+  const std::multimap<grpc::string, grpc::string>& server_metadata()
+      const {
+    return initial_metadata_;
+  }
+
   /// Return the compression algorithm to be used by the server call.
   grpc_compression_level compression_level() const {
     return compression_level_;
